@@ -7,13 +7,20 @@ Para quienes desarrollan los demás puntos (buscador, publicaciones, reclamos, e
 npm install
 npx expo start        # Android: tecla "a" (emulador) o Expo Go con QR
 ```
-## Backend simulado (mock)
-Con `USE_MOCK = true` en `config/env.js` (valor actual) la app funciona sin servidor: `services/mock/mockAdapter.js` responde los endpoints del contrato en memoria (persistido en AsyncStorage).
-- Código OTP válido: `123456`; OTP expirado: `000000` (responde 410).
-- Usuario demo: `demo@hallado.com` / `Demo1234` (5 devoluciones + insignia). Otro: `ana@hallado.com` / `Ana12345`.
-- Con el backend real: `USE_MOCK = false` y ajustar `API_BASE_URL`.
+## Backend Java (puntos 1 y 2)
+Hay un backend real en `backend/` (Spring Boot/Maven) que implementa el contrato de la sección 4 del plan. Con `USE_MOCK = false` en `config/env.js` (valor actual) la app le pega a él:
+```
+cd backend
+./mvnw spring-boot:run        # Windows: mvnw.cmd spring-boot:run
+```
+Queda en `http://localhost:3000/api` (o `http://10.0.2.2:3000/api` desde el emulador), que ya coincide con `API_BASE_URL`. Detalle en `backend/README.md` (usuarios demo, cómo ver el código OTP, consola de H2).
 
-Ajustar `API_BASE_URL` en `config/env.js` (emulador Android: `http://10.0.2.2:PUERTO/api`; celular físico: IP de la PC en la red local).
+## Backend simulado (mock), por si no querés levantar el backend Java
+Con `USE_MOCK = true` en `config/env.js` la app funciona sin ningún servidor: `services/mock/mockAdapter.js` responde los endpoints del contrato en memoria (persistido en AsyncStorage).
+- Código OTP válido: `123456`; OTP expirado: `000000` (responde 410).
+- Usuario demo: `demo@hallado.com` / `Demo1234` (5 devoluciones + insignia). Otro: `ana@hallado.com` / `Ana12345` (los mismos usuarios existen semillados en el backend Java).
+
+Ajustar `API_BASE_URL` en `config/env.js` si el backend corre en otro puerto o si se usa desde un celular físico (IP de la PC en la red local en vez de `10.0.2.2`).
 
 ## Agregar una pantalla al flujo principal (tabs)
 1. Crear la pantalla en `screens/<tema>/MiPantalla.js` y, si tiene varias, un stack en `navigation/MiTemaNavigator.js` (como `ProfileNavigator`).
