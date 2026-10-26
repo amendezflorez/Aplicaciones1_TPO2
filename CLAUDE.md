@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "Hallado" — university project (Aplicaciones 1, TPO2): mobile app for lost/found objects and pets. Expo SDK 57, React Native 0.86, React 19, **JavaScript** (no TypeScript). The source of truth for scope is the course material and the assignment in `.docs/` (`TPO_Hallado.pdf` and the two class PDFs): only use what the classes cover (React Navigation, Axios + interceptors, useContext, SecureStore/AsyncStorage, expo-local-authentication). Don't introduce Redux/Zustand, TypeScript, Expo Router or UI/form libraries.
 
-Plan and progress for points 1 (auth) and 2 (profile/reputation) live in `.docs/PLAN_puntos_1_y_2.md` and `.docs/TODO_puntos_1_y_2.md`; the integration guide for other team members is `.docs/INTEGRACION.md`. The REST API contract the app consumes is in section 4 of the plan; the backend is a separate responsibility and is not in this repo.
+Plan and progress for points 1 (auth) and 2 (profile/reputation) live in `.docs/PLAN_puntos_1_y_2.md` and `.docs/TODO_puntos_1_y_2.md`; the integration guide for other team members is `.docs/INTEGRACION.md`. The REST API contract the app consumes is in section 4 of the plan. A Java/Spring Boot implementation of that contract (points 1 and 2 only) now lives in `backend/` in this same repo — see `backend/README.md`. Points 3–10's backend functionality is still a separate responsibility, not in this repo.
 
 `AGENTS.md` rules still apply: verify Expo APIs against `https://docs.expo.dev/versions/v57.0.0/` before use, install packages with `npx expo install`, and never hand-edit `ios/`/`android/` (not committed; configure via `app.json` plugins). Its Expo Router guidance is **overridden** by the course: this app uses React Navigation with the class scaffold.
 
@@ -21,6 +21,8 @@ npx expo install <pkg>   # add packages
 
 No test runner is configured. There is no `tsc` step. On this Windows machine `node`/`npx` may be missing from the shell PATH; they live in `C:\Program Files\nodejs` (prepend it to `$env:Path`). Android is the target platform; biometrics must be tested on a physical device with an enrolled fingerprint/face.
 
+For the Java backend (`backend/`), see `backend/README.md`; in short, `cd backend && ./mvnw spring-boot:run` (needs a JDK on PATH/JAVA_HOME — e.g. the one bundled with Android Studio at `Android Studio\jbr`, since `java`/`javac` may not otherwise be on PATH on this machine).
+
 ## Architecture
 
 Entry: `index.js` → `App.js` = `SafeAreaProvider > AuthProvider > NavigationContainer > RootNavigator`. Folders at the repo root (class scaffold): `components/ screens/ navigation/ services/ hooks/ context/ utils/ config/`.
@@ -30,5 +32,6 @@ Entry: `index.js` → `App.js` = `SafeAreaProvider > AuthProvider > NavigationCo
 - **Storage split**: token → SecureStore; non-sensitive prefs (biometric flag) → AsyncStorage (`services/storage.js`). Never store the token in AsyncStorage.
 - **Navigation**: `AuthNavigator` (Stack: Login, RegisterEmail, VerifyOtp, SetPassword, ForgotPassword, ResetPassword) vs `AppNavigator` (bottom Tabs, where other points add their tabs). The "Perfil" tab hosts `ProfileNavigator` (Stack: Profile, EditProfile, Settings, PublicProfile). Other tabs open a public profile with `navigation.navigate('Perfil', { screen: 'PublicProfile', params: { userId } })`.
 - **Reputation and badges are computed by the backend**; the app only renders `user.reputation` / `user.badges`. The public profile must never show phone or publication history.
-- **Config**: `config/env.js` holds `API_BASE_URL` (currently `http://10.0.2.2:3000/api`, the Android-emulator alias for host localhost — change for a device/real backend).
-- **Mock backend**: `USE_MOCK` in `config/env.js` (default `true`) swaps the Axios adapter for `services/mock/mockAdapter.js`, an in-memory (AsyncStorage-persisted) implementation of the plan's API contract (OTP `123456`, expired `000000`, demo user `demo@hallado.com` / `Demo1234`). Keep it in sync with the contract when endpoints change; set `USE_MOCK = false` for the real backend.
+- **Config**: `config/env.js` holds `API_BASE_URL` (currently `http://10.0.2.2:3000/api`, the Android-emulator alias for host localhost; matches the Java backend's default port 3000 + context-path `/api` — change for a physical device or a different backend).
+- **Java backend** (`backend/`): Spring Boot 4.1 / Maven implementation of points 1 and 2 of the API contract (section 4 of the plan). H2 file-based DB via JPA, manual JWT (no Spring Security), seeded with the same demo users as the mock. Run with `cd backend && ./mvnw spring-boot:run`; see `backend/README.md`. This is the default backend (`USE_MOCK = false`).
+- **Mock backend**: `USE_MOCK` in `config/env.js` (currently `false`) swaps the Axios adapter for `services/mock/mockAdapter.js`, an in-memory (AsyncStorage-persisted) implementation of the plan's API contract (OTP `123456`, expired `000000`, demo user `demo@hallado.com` / `Demo1234`). Kept as a fallback for working without the Java backend running; keep it in sync with the contract when endpoints change. Set `USE_MOCK = true` to use it instead.
