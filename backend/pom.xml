@@ -15,7 +15,7 @@
 	<description>API REST de Hallado (objetos y mascotas perdidas) - puntos 1 y 2: autenticacion y perfil/reputacion</description>
 
 	<properties>
-		<java.version>21</java.version>
+		<java.version>25</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 	</properties>
 
