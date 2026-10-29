@@ -1,6 +1,6 @@
 # Backend — Hallado (puntos 1-4)
 
-API REST en **Java 25 + Spring Boot 4.1 (Maven)** que implementa:
+API REST en **Java 21 + Spring Boot 4.1 (Maven)** que implementa:
 
 - El contrato de la sección 4 de [`../.docs/PLAN_puntos_1_y_2.md`](../.docs/PLAN_puntos_1_y_2.md):
   autenticación (registro con OTP, login, recupero de contraseña) y perfil/reputación.
@@ -11,8 +11,9 @@ API REST en **Java 25 + Spring Boot 4.1 (Maven)** que implementa:
 
 ## Correr el servidor
 
-Requiere JDK 21+ (se usó JDK 25; el wrapper de Maven descarga Maven solo, no hace
-falta tenerlo instalado).
+Requiere JDK 21+ (el proyecto apunta a `--release 21`; un JDK más nuevo, como 23 o 25,
+también compila — javac siempre puede apuntar hacia abajo). El wrapper de Maven descarga
+Maven solo, no hace falta tenerlo instalado.
 
 ```bash
 cd backend

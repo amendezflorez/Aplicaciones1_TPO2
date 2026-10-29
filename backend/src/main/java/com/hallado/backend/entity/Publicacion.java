@@ -9,7 +9,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -36,8 +35,10 @@ public class Publicacion {
     @Column(nullable = false)
     private String titulo;
 
-    @Lob
-    @Column(nullable = false)
+    // Sin @Lob a propósito: Hibernate 7 no permite usar LOWER() en HQL sobre un campo
+    // mapeado a CLOB (lo necesita el buscador por texto de PublicacionRepository), y una
+    // descripción de este caso de uso entra sin problema en un VARCHAR largo.
+    @Column(nullable = false, length = 4000)
     private String descripcion;
 
     @Enumerated(EnumType.STRING)
