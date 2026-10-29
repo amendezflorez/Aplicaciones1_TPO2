@@ -1,8 +1,13 @@
-# Backend — Hallado (puntos 1 y 2)
+# Backend — Hallado (puntos 1-4)
 
-API REST en **Java 25 + Spring Boot 4.1 (Maven)** que implementa el contrato de la
-sección 4 de [`../.docs/PLAN_puntos_1_y_2.md`](../.docs/PLAN_puntos_1_y_2.md):
-autenticación (registro con OTP, login, recupero de contraseña) y perfil/reputación.
+API REST en **Java 25 + Spring Boot 4.1 (Maven)** que implementa:
+
+- El contrato de la sección 4 de [`../.docs/PLAN_puntos_1_y_2.md`](../.docs/PLAN_puntos_1_y_2.md):
+  autenticación (registro con OTP, login, recupero de contraseña) y perfil/reputación.
+- El contrato de la sección 3 de [`../.docs/PLAN_puntos_3_y_4.md`](../.docs/PLAN_puntos_3_y_4.md):
+  buscador/resultados y detalle de publicación, incluyendo alta de alertas, seguir
+  publicaciones e iniciar un reclamo ("Es mío" / "Lo encontré"). Puntos 5/7/8/9/10
+  siguen siendo responsabilidad de quien los construya — ver sección 0 de ese plan.
 
 ## Correr el servidor
 
@@ -28,6 +33,10 @@ H2 persistido en archivo (`backend/data/`, ignorado por git) vía JPA/Hibernate
 - `demo@hallado.com` / `Demo1234` (5 devoluciones → insignia "Vecino solidario")
 - `ana@hallado.com` / `Ana12345`
 
+También siembra 12 publicaciones de prueba (mitad perdido/mitad encontrado, repartidas
+entre `demo`/`ana`, con foto y variedad de categoría/barrio/fecha) para poder probar el
+buscador y el detalle de los puntos 3 y 4 desde el primer día.
+
 Consola web de H2 (opcional, para inspeccionar datos): `http://localhost:3000/api/h2-console`
 — JDBC URL `jdbc:h2:file:./data/hallado`, usuario `sa`, contraseña vacía.
 
@@ -52,13 +61,18 @@ INFO ... OtpService : Código OTP para alguien@mail.com (REGISTER): 483920
 config/     CORS, resource handler de /uploads/**, bean de PasswordEncoder
 security/   JwtService (genera/valida el JWT), JwtAuthFilter (exige Bearer salvo en
             /auth/*, /barrios, /uploads/**)
-entity/     User, Barrio, OtpCode, RegistrationToken (JPA)
+entity/     User, Barrio, OtpCode, RegistrationToken,
+            Publicacion, FotoPublicacion, Alerta, Seguimiento, Reclamo (JPA)
 repository/ Spring Data JPA
 dto/        request/ y response/ (records) — el shape exacto que espera la app
-service/    AuthService, UserService, OtpService, PhotoStorageService, UserMapper
-controller/ AuthController, UserController, BarrioController
+service/    AuthService, UserService, OtpService, PhotoStorageService, UserMapper,
+            PublicacionService, PublicacionMapper, AlertaService, SeguimientoService,
+            ReclamoService
+controller/ AuthController, UserController, BarrioController,
+            PublicacionController, AlertaController, SeguimientoController,
+            ReclamoController
 exception/  Jerarquía de ApiException + @RestControllerAdvice
-seed/       DataSeeder (barrios + usuarios demo)
+seed/       DataSeeder (barrios + usuarios demo + publicaciones de prueba)
 ```
 
 No se usa Spring Security (no se vio en la cátedra): la autenticación es manual con
