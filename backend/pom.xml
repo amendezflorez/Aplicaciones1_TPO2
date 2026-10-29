@@ -12,10 +12,15 @@
 	<artifactId>backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>backend</name>
-	<description>API REST de Hallado (objetos y mascotas perdidas) - puntos 1 y 2: autenticacion y perfil/reputacion</description>
+	<description>API REST de Hallado (objetos y mascotas perdidas) - puntos 1 y 2: autenticacion y perfil/reputacion; puntos 3 y 4: buscador/resultados y detalle de publicacion</description>
 
 	<properties>
-		<java.version>25</java.version>
+		<!-- 21 en vez de 25: es el mínimo real que necesita el proyecto (Spring Boot 4.1,
+		     nada de sintaxis exclusiva de versiones más nuevas) y lo que suele haber
+		     instalado (p. ej. el JBR de Android Studio). Un JDK más nuevo (23, 25...)
+		     también compila: el flag "release" del compilador siempre puede apuntar
+		     hacia una versión anterior a la del propio JDK. -->
+		<java.version>21</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
 	</properties>
 
