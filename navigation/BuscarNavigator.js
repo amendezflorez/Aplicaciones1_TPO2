@@ -1,13 +1,12 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BuscadorInicialScreen from '../screens/buscar/BuscadorInicialScreen';
 import DetallePublicacionScreen from '../screens/buscar/DetallePublicacionScreen';
+import IniciarReclamoScreen from '../screens/buscar/IniciarReclamoScreen';
 import ResultadosScreen from '../screens/buscar/ResultadosScreen';
 
 const Stack = createNativeStackNavigator();
 
-// Punto 3 (buscador/resultados) y Punto 4 (detalle). DetallePublicacionScreen es por
-// ahora un placeholder (ver comentario en ese archivo) hasta que se construya feature_4;
-// IniciarReclamoScreen se suma a este mismo Stack en ese momento.
+// Punto 3 (buscador/resultados) y Punto 4 (detalle + iniciar reclamo).
 export default function BuscarNavigator() {
   return (
     <Stack.Navigator initialRouteName="BuscadorInicial">
@@ -21,6 +20,11 @@ export default function BuscarNavigator() {
         name="DetallePublicacion"
         component={DetallePublicacionScreen}
         options={{ title: 'Publicación' }}
+      />
+      <Stack.Screen
+        name="IniciarReclamo"
+        component={IniciarReclamoScreen}
+        options={{ title: 'Iniciar reclamo' }}
       />
     </Stack.Navigator>
   );
