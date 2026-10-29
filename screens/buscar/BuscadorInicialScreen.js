@@ -30,7 +30,13 @@ export default function BuscadorInicialScreen({ navigation }) {
   const [hasta, setHasta] = useState(null);
   const [error, setError] = useState('');
 
-  const { ubicacion, cargando: cargandoUbicacion, permisoDenegado, obtenerUbicacion } = useUbicacionActual();
+  const {
+    ubicacion,
+    cargando: cargandoUbicacion,
+    permisoDenegado,
+    obtenerUbicacion,
+    limpiarUbicacion,
+  } = useUbicacionActual();
   const { ultimasBusquedas, guardarBusqueda } = useSearchHistory();
 
   useEffect(() => {
@@ -39,8 +45,19 @@ export default function BuscadorInicialScreen({ navigation }) {
       .catch((e) => setError(getErrorMessage(e)));
   }, []);
 
+  // Arranca una búsqueda nueva de cero: si no se limpian categoría/texto/barrio/ubicación/
+  // rango acá, quedan pegados de una búsqueda anterior (la pantalla no se desmonta al volver
+  // de Resultados) y terminan filtrando de más sin que la persona lo note — p. ej. un texto
+  // tipeado en un intento previo sigue aplicado en el siguiente.
   const elegirTipo = (valor) => {
     setTipoBuscado(valor);
+    setCategoria(null);
+    setTexto('');
+    setBarrioId(null);
+    setRango(null);
+    setDesde(null);
+    setHasta(null);
+    limpiarUbicacion();
     setStep(1);
   };
 
@@ -142,7 +159,7 @@ export default function BuscadorInicialScreen({ navigation }) {
             cargandoUbicacion={cargandoUbicacion}
             permisoDenegado={permisoDenegado}
             onUsarUbicacion={usarUbicacion}
-            onQuitarUbicacion={() => {}}
+            onQuitarUbicacion={limpiarUbicacion}
           />
         </View>
       ) : null}

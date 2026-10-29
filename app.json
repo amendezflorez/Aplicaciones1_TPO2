@@ -34,7 +34,8 @@
           "photosPermission": "Permitir que $(PRODUCT_NAME) acceda a tus fotos para elegir la foto de perfil.",
           "cameraPermission": "Permitir que $(PRODUCT_NAME) use la cámara para tomar la foto de perfil."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

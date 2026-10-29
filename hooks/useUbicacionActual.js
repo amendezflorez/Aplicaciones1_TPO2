@@ -33,5 +33,10 @@ export function useUbicacionActual() {
     }
   }, []);
 
-  return { ubicacion, cargando, permisoDenegado, obtenerUbicacion };
+  const limpiarUbicacion = useCallback(() => {
+    setUbicacion(null);
+    setPermisoDenegado(false);
+  }, []);
+
+  return { ubicacion, cargando, permisoDenegado, obtenerUbicacion, limpiarUbicacion };
 }

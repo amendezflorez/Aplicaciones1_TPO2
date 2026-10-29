@@ -54,6 +54,37 @@ navigation.navigate('Perfil', { screen: 'PublicProfile', params: { userId } });
 ## Componentes reutilizables
 `Screen`, `Button`, `TextField`, `ErrorText`, `Loading`, `Avatar`, `BadgeChip`, `ReputationSummary`, `BarrioPicker` (en `components/`); colores y espaciados en `config/theme.js`; validaciones en `utils/validators.js`.
 
+## Puntos 3 y 4 (buscador, resultados, detalle de publicación)
+
+Ya construidos (tab "Buscar"). Lo que el resto del equipo puede reusar en vez de duplicar:
+
+**Servicios** (`services/`): `publicacionesService.js` (buscar/detalle), `alertasService.js`
+(crear/listar/borrar — el Punto 9 lo necesita para "Mis alertas" y el indicador de
+novedad), `seguimientosService.js` (seguir/dejar de seguir/listar — el Punto 9 lo
+necesita para "Seguidas"), `reclamosService.js` (crear reclamo, consultar el propio, subir
+la foto de "Lo encontré" — el Punto 7 lo necesita para la bandeja de reclamos).
+
+**Componentes** (`components/`): `PublicationCard`, `EstadoChip`, `PhotoGallery`,
+`CategoriaPicker`, `BarrioOUbicacionPicker`, `RangoFechaPicker`.
+
+**Constantes** (`config/constants.js`): `CATEGORIAS`, `RANGOS_FECHA`, `FRANJAS_HORARIAS`.
+
+**Abrir el detalle de una publicación** desde cualquier tab (mismo patrón que el perfil
+público de arriba — lo necesitan, por ejemplo, "Mis alertas"/"Seguidas" del Punto 9 o la
+bandeja de reclamos del Punto 7):
+```js
+navigation.navigate('Buscar', { screen: 'DetallePublicacion', params: { id } });
+```
+
+**Backend (`backend/`)**: entidades `Publicacion`, `FotoPublicacion`, `Alerta`,
+`Seguimiento`, `Reclamo` — contrato completo en `.docs/PLAN_puntos_3_y_4.md` (sección 3).
+La sección 0 de ese plan dice explícitamente qué le falta a cada entidad para los puntos
+siguientes (por ejemplo, `Reclamo.estado` hoy solo llega a `pendiente`: el Punto 7 agrega
+aceptar/rechazar y el vencimiento a 48h sobre esta misma entidad, no una propia). Ojo:
+`ReclamoService.crear` ya tiene un tope defensivo de 3 intentos por publicación+autor
+(antes de que el Punto 7 exista) — si el límite real que pide la consigna es otro, ajustar
+ahí, no agregar una segunda validación en paralelo.
+
 ## Reglas del equipo
 - El token solo se guarda en SecureStore (`services/storage.js`), nunca en AsyncStorage.
 - Si es sensible, SecureStore; si es preferencia o caché, AsyncStorage.
