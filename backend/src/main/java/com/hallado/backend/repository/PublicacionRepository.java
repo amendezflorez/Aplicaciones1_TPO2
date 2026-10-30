@@ -1,17 +1,27 @@
 package com.hallado.backend.repository;
 
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
 import com.hallado.backend.entity.Categoria;
 import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.Publicacion;
 import com.hallado.backend.entity.TipoPublicacion;
-import java.time.Instant;
-import java.util.Collection;
-import java.util.List;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 public interface PublicacionRepository extends JpaRepository<Publicacion, String> {
+
+        @Lock(LockModeType.PESSIMISTIC_WRITE)
+        @Query("SELECT p FROM Publicacion p WHERE p.id = :id")
+        Optional<Publicacion> findByIdForUpdate(@Param("id") String id);
 
     // Filtra solo abierta/en_reclamo (resuelta/vencida ya no son accionables desde el
     // buscador). Cada parámetro opcional usa el patrón "(:p IS NULL OR campo = :p)";

@@ -6,8 +6,16 @@ API REST en **Java 21 + Spring Boot 4.1 (Maven)** que implementa:
   autenticación (registro con OTP, login, recupero de contraseña) y perfil/reputación.
 - El contrato de la sección 3 de [`../.docs/PLAN_puntos_3_y_4.md`](../.docs/PLAN_puntos_3_y_4.md):
   buscador/resultados y detalle de publicación, incluyendo alta de alertas, seguir
-  publicaciones e iniciar un reclamo ("Es mío" / "Lo encontré"). Puntos 5/7/8/9/10
-  siguen siendo responsabilidad de quien los construya — ver sección 0 de ese plan.
+  publicaciones e iniciar un reclamo ("Es mío" / "Lo encontré"). También implementa
+  la bandeja y resolución de reclamos, el límite de tres intentos y el vencimiento a 48 h.
+  Puntos 5/8/9/10 siguen siendo responsabilidad de quien los construya.
+
+## Reclamos
+
+- `GET /reclamos` devuelve en una sola lista los reclamos enviados y recibidos por el usuario autenticado.
+- `PATCH /reclamos/{id}/decision` acepta `{ "decision": "aceptar" | "rechazar" }`; solo puede responder el publicador y únicamente mientras esté pendiente.
+- Los pendientes vencen automáticamente al cumplirse 48 horas (tarea programada) y al consultar la bandeja o el reclamo propio.
+- `POST /publicaciones/{id}/reclamos` limita a tres intentos por autor y publicación; el alta serializa el conteo por publicación.
 
 ## Correr el servidor
 

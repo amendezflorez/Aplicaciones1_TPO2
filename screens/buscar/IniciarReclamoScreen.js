@@ -40,7 +40,7 @@ export default function IniciarReclamoScreen({ route, navigation }) {
 
   const pickFromGallery = async () => {
     const result = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
-    if (!result.canceled) setFotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets?.[0]?.uri) setFotoUri(result.assets[0].uri);
   };
 
   const takePhoto = async () => {
@@ -50,11 +50,19 @@ export default function IniciarReclamoScreen({ route, navigation }) {
       return;
     }
     const result = await ImagePicker.launchCameraAsync(PICKER_OPTIONS);
-    if (!result.canceled) setFotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets?.[0]?.uri) setFotoUri(result.assets[0].uri);
+  };
+
+  const pickOptionalPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
+    if (!result.canceled && result.assets?.[0]?.uri) setFotoUri(result.assets[0].uri);
   };
 
   const validate = () => {
     const found = {};
+    if (esMio && !preguntaVerificacion) {
+      found.pregunta = 'Esta publicación no tiene una pregunta de verificación disponible.';
+    }
     if (esMio && !respuestaPregunta.trim()) {
       found.respuestaPregunta = 'Respondé la pregunta para verificar que es tuyo.';
     }
@@ -72,7 +80,12 @@ export default function IniciarReclamoScreen({ route, navigation }) {
     setEnviando(true);
     try {
       const data = esMio
-        ? { tipo, respuestaPregunta: respuestaPregunta.trim(), descripcion: descripcion.trim() || undefined }
+        ? {
+            tipo,
+            respuestaPregunta: respuestaPregunta.trim(),
+            descripcion: descripcion.trim() || undefined,
+            fotoUrl: fotoUri ? (await subirFotoReclamo(fotoUri)).photoUrl : undefined,
+          }
         : {
             tipo,
             barrioId,
@@ -100,6 +113,7 @@ export default function IniciarReclamoScreen({ route, navigation }) {
               <Text style={styles.pregunta}>{preguntaVerificacion}</Text>
             </View>
           ) : null}
+          <ErrorText message={errors.pregunta} />
           <TextField
             label="Tu respuesta"
             value={respuestaPregunta}
@@ -107,6 +121,14 @@ export default function IniciarReclamoScreen({ route, navigation }) {
             error={errors.respuestaPregunta}
             multiline
           />
+          <View style={styles.fotoSection}>
+            {fotoUri ? <Image source={{ uri: fotoUri }} style={styles.fotoPreview} /> : null}
+            <Button
+              title={fotoUri ? 'Cambiar foto opcional' : 'Agregar foto opcional'}
+              variant="secondary"
+              onPress={pickOptionalPhoto}
+            />
+          </View>
         </>
       ) : (
         <>

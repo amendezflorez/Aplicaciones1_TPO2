@@ -11,7 +11,7 @@ Se apoya en lo ya construido para los puntos 1 y 2 (`AuthContext`, `api.js`, `Pr
 
 Este plan construye lo mínimo necesario para que los Puntos 3 y 4 sean funcionales de punta a punta, incluyendo las entidades/endpoints que otros puntos van a necesitar extender. Explícitamente **no** construye:
 
-- La bandeja "Mis reclamos" ni aceptar/rechazar reclamos, el límite de 3 intentos ni el vencimiento a 48h (**Punto 7**, intentado y revertido por Juan — ver commit `9761078`). Sí se crea la entidad `Reclamo` y el endpoint para *iniciar* un reclamo (lo que dispara "Es mío" / "Lo encontré" en el detalle), porque sin eso el Punto 4 no es funcional.
+- La bandeja "Mis reclamos", aceptar/rechazar, el límite de 3 intentos y el vencimiento a 48h pertenecen al **Punto 7** y ahora extienden la entidad `Reclamo` creada aquí. La aplicación y el backend incluyen la implementación integrada; no se debe duplicar la entidad ni sus endpoints.
 - La propuesta de punto de encuentro ni el botón "Cómo llegar" (**Punto 8**).
 - Las pantallas "Mis alertas" / "Seguidas" y el indicador de novedad agregado (**Punto 9**). Sí se crean las entidades `Alerta` y `Seguimiento` y los endpoints para crearlas/listarlas/borrarlas, porque "guardar como alerta" y "seguir la publicación" son acciones que el TP pide disparar desde los Puntos 3 y 4.
 - La gestión de la propia publicación —pausar, renovar a los 30 días— (**Punto 5**); el detalle solo linkea a esa pantalla si es el propio publicador, con un placeholder si point 5 todavía no existe.
@@ -114,13 +114,15 @@ Se guardan **en el dispositivo** (`AsyncStorage` vía `SearchContext`, no es dat
 | DELETE | `/publicaciones/{id}/seguir` | — | `204` |
 | GET | `/seguimientos` | — | `PublicacionResumen[]` seguidas por el usuario |
 
-### Reclamos — solo el alta (Punto 7 construye el resto)
+### Reclamos — alta y bandeja integrada (Punto 7)
 | Método | Ruta | Body | Respuesta |
 |---|---|---|---|
 | POST | `/publicaciones/{id}/reclamos` | `{ tipo: 'es_mio'\|'lo_encontre', respuestaPregunta?, descripcion?, fotoUrl? }`. `es_mio` exige `respuestaPregunta`; `lo_encontre` exige `fotoUrl` y `barrioId` (dónde lo encontró) | `Reclamo` (`201`). `409` si ya tiene 3 intentos sobre esa publicación (límite ya contemplado en la entidad aunque el *consumo* del límite real —reintentos tras rechazo— lo termina de ajustar el Punto 7) |
 | GET | `/publicaciones/{id}/reclamos/mio` | — | `Reclamo\|null` — el propio reclamo pendiente/aceptado sobre esa publicación, para que el botón sepa si mostrar "Ya reclamaste" |
+| GET | `/reclamos` | — | `ReclamoBandeja[]` — reclamos enviados y recibidos, con datos de publicación, autor/publicador y vencimiento |
+| PATCH | `/reclamos/{id}/decision` | `{ decision: 'aceptar'|'rechazar' }` | `Reclamo` actualizado; solo el publicador puede responder reclamos pendientes |
 
-`Reclamo.estado`: `pendiente` por defecto; `aceptado`/`rechazado`/`vencido` los setea el Punto 7 (no hay endpoint propio en este plan para cambiar el estado — se deja la entidad lista con el campo).
+`Reclamo.estado`: `pendiente` por defecto; vence a las 48 h si no hay respuesta. El backend aplica el tope de 3 intentos por autor/publicación.
 
 ## 4. Diseño de la solución
 

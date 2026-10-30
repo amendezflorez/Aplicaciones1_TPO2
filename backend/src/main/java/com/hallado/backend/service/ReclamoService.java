@@ -1,7 +1,18 @@
 package com.hallado.backend.service;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
 import com.hallado.backend.dto.request.CrearReclamoRequest;
 import com.hallado.backend.dto.response.BarrioResponse;
+import com.hallado.backend.dto.response.ReclamoBandejaResponse;
 import com.hallado.backend.dto.response.ReclamoResponse;
 import com.hallado.backend.entity.Barrio;
 import com.hallado.backend.entity.EstadoPublicacion;
@@ -18,20 +29,12 @@ import com.hallado.backend.repository.BarrioRepository;
 import com.hallado.backend.repository.PublicacionRepository;
 import com.hallado.backend.repository.ReclamoRepository;
 import com.hallado.backend.repository.UserRepository;
-import java.time.Instant;
-import java.util.List;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 
-// Solo el alta ("Es mío"/"Lo encontré" del detalle) y "¿ya reclamé esto?". El Punto 7
-// construye aceptar/rechazar, el consumo real del límite de 3 intentos (tras rechazo) y
-// el vencimiento a 48h (sección 0 del plan) — acá solo se deja la entidad lista y un tope
-// defensivo de 3 filas por publicación+autor para no dejar la puerta abierta a spam.
 @Service
 public class ReclamoService {
 
     private static final int MAX_INTENTOS = 3;
+    private static final Duration PLAZO_RESPUESTA = Duration.ofHours(48);
 
     private final ReclamoRepository reclamoRepository;
     private final PublicacionRepository publicacionRepository;
@@ -52,18 +55,21 @@ public class ReclamoService {
         this.photoStorageService = photoStorageService;
     }
 
-    // "Lo encontré" exige una foto (sección 3 del plan) y todavía no hay un endpoint
-    // genérico de subida de imágenes en el backend (el único que existía era específico
-    // de la foto de perfil). Reusa PhotoStorageService tal cual: misma carpeta de
-    // uploads, misma URL servida por WebConfig en /uploads/**.
+    // Reusa PhotoStorageService para las fotos de evidencia opcionales/obligatorias.
     public String subirFoto(String userId, MultipartFile foto) {
         return photoStorageService.store(userId, foto);
     }
 
+    @Transactional
     public ReclamoResponse crear(String userId, String publicacionId, CrearReclamoRequest request) {
-        Publicacion publicacion = publicacionRepository.findById(publicacionId).orElseThrow(NotFoundException::new);
+        Publicacion publicacion = publicacionRepository.findByIdForUpdate(publicacionId)
+            .orElseThrow(NotFoundException::new);
         if (publicacion.getPublicador().getId().equals(userId)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "No podés reclamar tu propia publicación.");
+        }
+        if (publicacion.getEstado() == EstadoPublicacion.RESUELTA
+            || publicacion.getEstado() == EstadoPublicacion.VENCIDA) {
+            throw new ConflictException("Esta publicación ya no acepta reclamos.");
         }
         if (request.tipo() == null || request.tipo().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "tipo es obligatorio.");
@@ -72,9 +78,12 @@ public class ReclamoService {
         validarTipoContraPublicacion(tipo, publicacion);
 
         String respuestaPregunta = null;
-        String fotoUrl = null;
+        String fotoUrl = (request.fotoUrl() == null || request.fotoUrl().isBlank()) ? null : request.fotoUrl();
         Barrio barrioEncontrado = null;
         if (tipo == TipoReclamo.ES_MIO) {
+            if (publicacion.getPreguntaVerificacion() == null || publicacion.getPreguntaVerificacion().isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Esta publicación no tiene pregunta de verificación.");
+            }
             if (request.respuestaPregunta() == null || request.respuestaPregunta().isBlank()) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "respuestaPregunta es obligatoria para 'Es mío'.");
             }
@@ -121,11 +130,82 @@ public class ReclamoService {
         return toResponse(reclamo);
     }
 
+    @Transactional
     public ReclamoResponse obtenerMio(String userId, String publicacionId) {
+        vencerPendientes();
         return reclamoRepository
                 .findFirstByPublicacionIdAndAutorIdOrderByCreadaEnDesc(publicacionId, userId)
                 .map(this::toResponse)
                 .orElse(null);
+    }
+
+    @Transactional
+    public List<ReclamoBandejaResponse> listar(String userId) {
+        vencerPendientes();
+        return java.util.stream.Stream.concat(
+                        reclamoRepository.findByAutorIdOrderByCreadaEnDesc(userId).stream(),
+                        reclamoRepository.findRecibidosPorPublicador(userId).stream())
+                .distinct()
+                .map(this::toBandejaResponse)
+                .toList();
+    }
+
+    @Transactional
+    public ReclamoResponse decidir(String userId, String reclamoId, String decision) {
+        vencerPendientes();
+        Reclamo reclamo = reclamoRepository.findByIdForUpdate(reclamoId).orElseThrow(NotFoundException::new);
+        if (!reclamo.getPublicacion().getPublicador().getId().equals(userId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Solo el publicador puede responder este reclamo.");
+        }
+        if (reclamo.getEstado() != com.hallado.backend.entity.EstadoReclamo.PENDIENTE) {
+            throw new ConflictException("Este reclamo ya no está pendiente.");
+        }
+        if (decision == null || (!decision.equalsIgnoreCase("aceptar") && !decision.equalsIgnoreCase("rechazar"))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "La decisión debe ser aceptar o rechazar.");
+        }
+
+        boolean aceptado = decision.equalsIgnoreCase("aceptar");
+        reclamo.setEstado(aceptado
+                ? com.hallado.backend.entity.EstadoReclamo.ACEPTADO
+                : com.hallado.backend.entity.EstadoReclamo.RECHAZADO);
+        reclamoRepository.save(reclamo);
+        if (aceptado) {
+            Publicacion publicacion = reclamo.getPublicacion();
+            publicacion.setEstado(EstadoPublicacion.RESUELTA);
+            publicacionRepository.save(publicacion);
+        } else {
+            reabrirSiNoQuedanReclamosActivos(reclamo.getPublicacion());
+        }
+        return toResponse(reclamo);
+    }
+
+    @Scheduled(fixedDelay = 60000)
+    @Transactional
+    public void vencerReclamosSinRespuesta() {
+        vencerPendientes();
+    }
+
+    private void vencerPendientes() {
+        Instant cutoff = Instant.now().minus(PLAZO_RESPUESTA);
+        List<Reclamo> vencidos = reclamoRepository.findByEstadoAndCreadaEnBefore(
+                com.hallado.backend.entity.EstadoReclamo.PENDIENTE, cutoff);
+        vencidos.forEach(reclamo -> reclamo.setEstado(com.hallado.backend.entity.EstadoReclamo.VENCIDO));
+        reclamoRepository.saveAll(vencidos);
+        vencidos.stream()
+                .map(Reclamo::getPublicacion)
+                .distinct()
+                .forEach(this::reabrirSiNoQuedanReclamosActivos);
+    }
+
+    private void reabrirSiNoQuedanReclamosActivos(Publicacion publicacion) {
+        if (publicacion.getEstado() == EstadoPublicacion.EN_RECLAMO
+                && !reclamoRepository.existsByPublicacionIdAndEstado(
+                        publicacion.getId(), com.hallado.backend.entity.EstadoReclamo.PENDIENTE)
+                && !reclamoRepository.existsByPublicacionIdAndEstado(
+                        publicacion.getId(), com.hallado.backend.entity.EstadoReclamo.ACEPTADO)) {
+            publicacion.setEstado(EstadoPublicacion.ABIERTA);
+            publicacionRepository.save(publicacion);
+        }
     }
 
     // "Es mío" solo tiene sentido sobre una publicación tipo=encontrado (alguien avisa que
@@ -152,5 +232,28 @@ public class ReclamoService {
                 barrio == null ? null : new BarrioResponse(barrio.getId(), barrio.getName()),
                 reclamo.getEstado(),
                 reclamo.getCreadaEn());
+    }
+
+    private ReclamoBandejaResponse toBandejaResponse(Reclamo reclamo) {
+        return new ReclamoBandejaResponse(
+                reclamo.getId(),
+                reclamo.getPublicacion().getId(),
+                reclamo.getPublicacion().getTitulo(),
+                reclamo.getPublicacion().getPublicador().getId(),
+                reclamo.getPublicacion().getPublicador().getName(),
+                reclamo.getPublicacion().getPublicador().getPhotoUrl(),
+                reclamo.getAutor().getId(),
+                reclamo.getAutor().getName(),
+                reclamo.getAutor().getPhotoUrl(),
+                reclamo.getTipo(),
+                reclamo.getRespuestaPregunta(),
+                reclamo.getDescripcion(),
+                reclamo.getFotoUrl(),
+                reclamo.getBarrioEncontrado() == null
+                        ? null
+                        : new BarrioResponse(reclamo.getBarrioEncontrado().getId(), reclamo.getBarrioEncontrado().getName()),
+                reclamo.getEstado(),
+                reclamo.getCreadaEn(),
+                reclamo.getCreadaEn().plus(PLAZO_RESPUESTA));
     }
 }
