@@ -1,12 +1,11 @@
 package com.hallado.backend.controller;
 
-import com.hallado.backend.dto.request.CrearReclamoRequest;
-import com.hallado.backend.dto.response.PhotoResponse;
-import com.hallado.backend.dto.response.ReclamoResponse;
-import com.hallado.backend.service.ReclamoService;
+import java.util.List;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -16,8 +15,13 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-// Solo el alta ("Es mío"/"Lo encontré" desde el detalle) y "¿ya reclamé esto?". El Punto 7
-// construye la bandeja de reclamos y aceptar/rechazar sobre esta misma entidad.
+import com.hallado.backend.dto.request.CrearReclamoRequest;
+import com.hallado.backend.dto.request.DecisionReclamoRequest;
+import com.hallado.backend.dto.response.PhotoResponse;
+import com.hallado.backend.dto.response.ReclamoBandejaResponse;
+import com.hallado.backend.dto.response.ReclamoResponse;
+import com.hallado.backend.service.ReclamoService;
+
 @RestController
 public class ReclamoController {
 
@@ -25,6 +29,19 @@ public class ReclamoController {
 
     public ReclamoController(ReclamoService reclamoService) {
         this.reclamoService = reclamoService;
+    }
+
+    @GetMapping("/reclamos")
+    public List<ReclamoBandejaResponse> listar(@RequestAttribute("userId") String userId) {
+        return reclamoService.listar(userId);
+    }
+
+    @PatchMapping("/reclamos/{id}/decision")
+    public ReclamoResponse decidir(
+            @RequestAttribute("userId") String userId,
+            @PathVariable String id,
+            @RequestBody DecisionReclamoRequest body) {
+        return reclamoService.decidir(userId, id, body.decision());
     }
 
     @PostMapping("/publicaciones/{id}/reclamos")

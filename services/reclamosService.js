@@ -11,6 +11,11 @@ export const crearReclamo = async (publicacionId, data) =>
 export const getReclamoPropio = async (publicacionId) =>
   (await api.get(`/publicaciones/${publicacionId}/reclamos/mio`)).data;
 
+export const getMisReclamos = async () => (await api.get('/reclamos')).data;
+
+export const decidirReclamo = async (reclamoId, decision) =>
+  (await api.patch(`/reclamos/${reclamoId}/decision`, { decision })).data;
+
 // Sube la foto que pide "Lo encontré" (mismo patrón de dos pasos que la foto de perfil en
 // userService.uploadPhoto: subir primero, mandar la URL ya resuelta en crearReclamo).
 export async function subirFotoReclamo(uri) {
