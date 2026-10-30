@@ -20,8 +20,6 @@ public class BarrioController {
 
     @GetMapping
     public List<BarrioResponse> list() {
-        return barrioRepository.findAll().stream()
-                .map(b -> new BarrioResponse(b.getId(), b.getName()))
-                .toList();
+        return barrioRepository.findAll().stream().map(BarrioResponse::of).toList();
     }
 }

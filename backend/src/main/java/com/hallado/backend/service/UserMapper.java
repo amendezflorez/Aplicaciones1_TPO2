@@ -45,7 +45,7 @@ public class UserMapper {
     }
 
     private BarrioResponse toBarrioResponse(Barrio barrio) {
-        return barrio == null ? null : new BarrioResponse(barrio.getId(), barrio.getName());
+        return BarrioResponse.of(barrio);
     }
 
     private ReputationResponse toReputationResponse(User user) {

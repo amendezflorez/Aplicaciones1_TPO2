@@ -74,9 +74,10 @@ export default function DetallePublicacionScreen({ route, navigation }) {
     }
   };
 
+  // Punto 5: "Mis publicaciones" (tab Publicar) es donde vive la gestión real —
+  // renovarla ahí mismo, sin un detalle de gestión aparte para esta sola publicación.
   const gestionarPublicacion = () => {
-    // Punto 5 (pausar/renovar) todavía no existe en este plan — ver sección 0.
-    Alert.alert('Próximamente', 'La gestión de tu publicación va a estar disponible cuando esté lista esa pantalla.');
+    navigation.navigate('Publicar', { screen: 'MisPublicaciones' });
   };
 
   const irAReclamo = (tipo) => {

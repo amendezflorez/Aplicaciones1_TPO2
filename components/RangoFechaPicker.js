@@ -8,17 +8,19 @@ import { colors, radius, spacing } from '../config/theme';
 // de Expo SDK 57, que remite al README de la librería): "personalizado" muestra dos
 // pickers, desde y hasta, tal como preveía la sección 4.1 del plan para ese caso.
 // display="default": en Android abre como diálogo nativo; en iOS (14+) muestra un botón
-// compacto que abre un calendario — en ambos casos onChange dispara una sola vez al
-// confirmar, a diferencia de "spinner" que dispara en cada scroll.
+// compacto que abre un calendario.
+// onChange (event, date) está deprecado desde la 9.x instalada (confirmado contra
+// src/index.d.ts del paquete, no de memoria) a favor de onValueChange (se llama solo
+// cuando la persona confirma un valor) + onDismiss (se llama al cerrar sin elegir nada) —
+// onChange mezclaba los dos casos en un solo callback distinguido por event.type.
 export default function RangoFechaPicker({ rango, onSelectRango, desde, hasta, onChangeDesde, onChangeHasta }) {
   const [mostrando, setMostrando] = useState(null); // 'desde' | 'hasta' | null
 
-  const handleChange = (onChange) => (event, selectedDate) => {
+  const handleValueChange = (onChange) => (event, selectedDate) => {
     setMostrando(null);
-    if (event.type === 'set' && selectedDate) {
-      onChange(selectedDate);
-    }
+    onChange(selectedDate);
   };
+  const handleDismiss = () => setMostrando(null);
 
   return (
     <View style={styles.container}>
@@ -53,7 +55,8 @@ export default function RangoFechaPicker({ rango, onSelectRango, desde, hasta, o
           mode="date"
           display="default"
           maximumDate={new Date()}
-          onChange={handleChange(onChangeDesde)}
+          onValueChange={handleValueChange(onChangeDesde)}
+          onDismiss={handleDismiss}
         />
       ) : null}
       {mostrando === 'hasta' ? (
@@ -62,7 +65,8 @@ export default function RangoFechaPicker({ rango, onSelectRango, desde, hasta, o
           mode="date"
           display="default"
           maximumDate={new Date()}
-          onChange={handleChange(onChangeHasta)}
+          onValueChange={handleValueChange(onChangeHasta)}
+          onDismiss={handleDismiss}
         />
       ) : null}
     </View>

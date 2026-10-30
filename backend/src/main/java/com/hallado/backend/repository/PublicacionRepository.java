@@ -66,4 +66,14 @@ public interface PublicacionRepository extends JpaRepository<Publicacion, String
                 hasta,
                 texto);
     }
+
+    // Punto 5: idempotencia del alta (ver Publicacion.clientRequestId) y "Mis publicaciones".
+    Optional<Publicacion> findByPublicadorIdAndClientRequestId(String publicadorId, String clientRequestId);
+
+    List<Publicacion> findByPublicadorIdOrderByCreadaEnDesc(String publicadorId);
+
+    // Vencimiento automático (sección 4.4 del plan 5/6): publicaciones ABIERTA cuyo
+    // venceEn ya pasó. Solo ABIERTA a propósito: EN_RECLAMO/RESUELTA las gobierna
+    // ReclamoService, no esta regla.
+    List<Publicacion> findByEstadoAndVenceEnBefore(EstadoPublicacion estado, Instant venceEn);
 }
