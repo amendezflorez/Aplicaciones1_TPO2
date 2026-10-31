@@ -7,6 +7,7 @@ import ErrorText from '../../components/ErrorText';
 import Screen from '../../components/Screen';
 import TextField from '../../components/TextField';
 import { colors, radius, spacing } from '../../config/theme';
+import { useConnectivity } from '../../hooks/useConnectivity';
 import { getErrorMessage } from '../../services/errors';
 import { crearReclamo, subirFotoReclamo } from '../../services/reclamosService';
 import { getBarrios } from '../../services/userService';
@@ -20,6 +21,7 @@ const PICKER_OPTIONS = { mediaTypes: ['images'], allowsEditing: true, aspect: [4
 export default function IniciarReclamoScreen({ route, navigation }) {
   const { id, tipo, preguntaVerificacion } = route.params;
   const esMio = tipo === 'es_mio';
+  const { sinConexion } = useConnectivity();
 
   const [respuestaPregunta, setRespuestaPregunta] = useState('');
   const [descripcion, setDescripcion] = useState('');
@@ -153,7 +155,8 @@ export default function IniciarReclamoScreen({ route, navigation }) {
       />
 
       <ErrorText message={error} />
-      <Button title="Enviar" onPress={enviar} loading={enviando} />
+      {sinConexion ? <Text style={styles.avisoSinConexion}>Necesitás conexión para enviar el reclamo.</Text> : null}
+      <Button title="Enviar" onPress={enviar} loading={enviando} disabled={sinConexion} />
     </Screen>
   );
 }
@@ -190,5 +193,10 @@ const styles = StyleSheet.create({
   fotoBotones: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  avisoSinConexion: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });

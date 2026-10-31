@@ -1,5 +1,7 @@
-import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConnectivity } from '../hooks/useConnectivity';
 import { setupInterceptors } from '../services/api';
+import { procesarColaPendientes } from '../services/offline/colaProcesador';
 import { getMe } from '../services/userService';
 import {
   deleteToken,
@@ -14,6 +16,7 @@ export const AuthContext = createContext(null);
 
 // status: 'loading' | 'unauthenticated' | 'locked' | 'authenticated'
 export function AuthProvider({ children }) {
+  const { estado: estadoConexion, notificarErrorDeRed } = useConnectivity();
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState('loading');
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
@@ -57,8 +60,10 @@ export function AuthProvider({ children }) {
   // Se llama desde BiometricLockScreen tras una autenticación biométrica exitosa.
   const completeUnlock = loadSession;
 
-  // El interceptor necesita logout() pero vive fuera de React: se lo inyectamos.
-  useEffect(() => setupInterceptors(logout), [logout]);
+  // El interceptor necesita logout() y notificarErrorDeRed() pero vive fuera de React: se
+  // los inyectamos (Punto 6: cualquier request sin respuesta marca "sin conexión" en
+  // ConnectivityContext, ver services/api.js).
+  useEffect(() => setupInterceptors(logout, notificarErrorDeRed), [logout, notificarErrorDeRed]);
 
   // Restaurar sesión al abrir la app
   useEffect(() => {
@@ -83,6 +88,30 @@ export function AuthProvider({ children }) {
     };
     restore();
   }, [loadSession]);
+
+  // Punto 6 (sección 15.10 del plan): dispara el procesamiento de la cola de
+  // publicaciones pendientes de ESTE usuario (la cola es por userId, ver
+  // services/offline/colaPendientes.js) — nunca la de otro que haya usado el dispositivo
+  // antes. Dos disparadores:
+  //  1. Recién autenticado (login, restaurar sesión, desbloqueo biométrico): cubre tanto
+  //     "se abrió la app con sesión ya válida" como, sobre todo, "un usuario distinto
+  //     inició sesión" — en ese caso procesa la cola de ESE usuario, nunca la del
+  //     anterior, que queda intacta hasta que vuelva a loguearse.
+  //  2. Vuelve la conexión (offline -> online/desconocido) mientras ya hay sesión — cubre
+  //     también el caso de una sesión vencida a mitad de la cola: cuando el usuario se
+  //     loguea de nuevo, el disparador 1 reintenta lo que quedó pendiente (colaProcesador
+  //     deja esos ítems en 'pendiente', no los marca como error, ante un 401).
+  const previoRef = useRef({ status, estadoConexion });
+  useEffect(() => {
+    const previo = previoRef.current;
+    const autenticadoAhora = status === 'authenticated' && !!user;
+    const recienAutenticado = previo.status !== 'authenticated' && status === 'authenticated';
+    const volvioLaConexion = previo.estadoConexion === 'offline' && estadoConexion !== 'offline';
+    if (autenticadoAhora && (recienAutenticado || volvioLaConexion)) {
+      procesarColaPendientes(user.id);
+    }
+    previoRef.current = { status, estadoConexion };
+  }, [status, estadoConexion, user]);
 
   const value = useMemo(
     () => ({

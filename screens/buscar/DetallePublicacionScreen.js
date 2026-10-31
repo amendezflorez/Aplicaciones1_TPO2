@@ -10,46 +10,82 @@ import PhotoGallery from '../../components/PhotoGallery';
 import Screen from '../../components/Screen';
 import { CATEGORIAS } from '../../config/constants';
 import { colors, radius, spacing } from '../../config/theme';
-import { getErrorMessage } from '../../services/errors';
+import { useConnectivity } from '../../hooks/useConnectivity';
+import { esErrorDeRed, getErrorMessage } from '../../services/errors';
+import { guardarDetalle, obtenerDetalle as obtenerDetalleCacheado } from '../../services/offline/detallesCache';
 import { getDetallePublicacion } from '../../services/publicacionesService';
 import { dejarDeSeguirPublicacion, seguirPublicacion } from '../../services/seguimientosService';
 import { getPublicProfile } from '../../services/userService';
 import { formatFechaRelativa, formatFranjaHoraria } from '../../utils/publicacionFormatters';
 
-// Punto 4 completo (sección 4.3 del plan): galería, descripción, categoría, fecha+franja,
-// estado, barrio, card del publicador (link a su perfil público) y la botonera condicional
-// según esPropia/tipo/yaReclame/siguiendo. "Sin conexión" (Punto 6) queda afuera: esta
-// pantalla recibe la publicación ya resuelta y no le importa de dónde salió.
+// Punto 4 (sección 4.3 del plan) + caché offline del Punto 5/6 (sección 4.2 de
+// PLAN_puntos_5_y_6.md): esta pantalla ya recibía la publicación "resuelta" sin importarle
+// de dónde salía, lo que la dejó lista para sumar el caché sin tocar su forma: con éxito
+// online se guarda (detalle + fotos a disco) vía services/offline/detallesCache.js; sin
+// conexión (o si la request falla por red) se muestra la última versión cacheada, si hay.
 export default function DetallePublicacionScreen({ route, navigation }) {
   const { id } = route.params;
+  const { sinConexion } = useConnectivity();
   const [detalle, setDetalle] = useState(null);
   const [publicadorReputacion, setPublicadorReputacion] = useState(null);
   const [error, setError] = useState('');
+  const [desdeCache, setDesdeCache] = useState(false);
   const [siguiendo, setSiguiendo] = useState(false);
   const [cambiandoSeguir, setCambiandoSeguir] = useState(false);
+
+  const aplicarDetalle = (d, cacheado) => {
+    setDetalle(d);
+    setSiguiendo(d.siguiendo);
+    setDesdeCache(cacheado);
+    setError('');
+  };
 
   // useFocusEffect (no useEffect simple) para refrescar yaReclame/estado al volver de
   // IniciarReclamoScreen, no solo al entrar por primera vez.
   useFocusEffect(
     useCallback(() => {
       let vigente = true;
-      getDetallePublicacion(id)
-        .then((d) => {
+
+      const intentarDesdeCache = async (mensajeSiNoHay) => {
+        const cacheado = await obtenerDetalleCacheado(id);
+        if (!vigente) return;
+        if (cacheado) {
+          aplicarDetalle(cacheado, true);
+        } else {
+          setError(mensajeSiNoHay);
+        }
+      };
+
+      const cargar = async () => {
+        if (sinConexion) {
+          await intentarDesdeCache('No hay conexión y todavía no guardamos esta publicación para verla sin conexión.');
+          return;
+        }
+        try {
+          const d = await getDetallePublicacion(id);
           if (!vigente) return;
-          setDetalle(d);
-          setSiguiendo(d.siguiendo);
-          setError('');
+          aplicarDetalle(d, false);
+          guardarDetalle(d); // fire-and-forget: no bloquea el render del detalle
           if (!d.esPropia) {
             getPublicProfile(d.publicador.id)
               .then((p) => vigente && setPublicadorReputacion(p.reputation))
               .catch(() => {});
           }
-        })
-        .catch((e) => vigente && setError(getErrorMessage(e)));
+        } catch (e) {
+          if (!vigente) return;
+          if (esErrorDeRed(e)) {
+            await intentarDesdeCache(getErrorMessage(e));
+            return;
+          }
+          setError(getErrorMessage(e));
+        }
+      };
+
+      cargar();
       return () => {
         vigente = false;
       };
-    }, [id])
+    }, [id, sinConexion])
   );
 
   const toggleSeguir = async () => {
@@ -102,6 +138,12 @@ export default function DetallePublicacionScreen({ route, navigation }) {
 
   return (
     <Screen>
+      {desdeCache ? (
+        <Text style={styles.avisoCache}>
+          Estás viendo la versión guardada de esta publicación: puede no estar actualizada.
+        </Text>
+      ) : null}
+
       <PhotoGallery fotos={detalle.fotos} />
 
       <View style={styles.header}>
@@ -151,9 +193,9 @@ export default function DetallePublicacionScreen({ route, navigation }) {
         ) : detalle.yaReclame ? (
           <Button title="Ya enviaste un reclamo" disabled onPress={() => {}} />
         ) : detalle.tipo === 'encontrado' ? (
-          <Button title="Es mío" onPress={() => irAReclamo('es_mio')} />
+          <Button title="Es mío" onPress={() => irAReclamo('es_mio')} disabled={sinConexion} />
         ) : (
-          <Button title="Lo encontré" onPress={() => irAReclamo('lo_encontre')} />
+          <Button title="Lo encontré" onPress={() => irAReclamo('lo_encontre')} disabled={sinConexion} />
         )}
 
         {!detalle.esPropia ? (
@@ -162,7 +204,13 @@ export default function DetallePublicacionScreen({ route, navigation }) {
             variant="secondary"
             onPress={toggleSeguir}
             loading={cambiandoSeguir}
+            disabled={sinConexion}
           />
+        ) : null}
+        {/* Reclamar y seguir necesitan conexión (Punto 6, sección 5 del plan); "Gestionar
+           publicación" no (solo navega a Mis publicaciones, local). */}
+        {sinConexion && !detalle.esPropia && !detalle.yaReclame ? (
+          <Text style={styles.avisoSinConexion}>Necesitás conexión para reclamar o seguir esta publicación.</Text>
         ) : null}
       </View>
     </Screen>
@@ -170,6 +218,16 @@ export default function DetallePublicacionScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
+  avisoCache: {
+    fontSize: 13,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  avisoSinConexion: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

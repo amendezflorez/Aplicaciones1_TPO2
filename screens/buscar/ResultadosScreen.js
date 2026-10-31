@@ -11,15 +11,18 @@ import RangoFechaPicker from '../../components/RangoFechaPicker';
 import Screen from '../../components/Screen';
 import { SEARCH_PAGE_SIZE } from '../../config/constants';
 import { colors, radius, spacing } from '../../config/theme';
+import { useConnectivity } from '../../hooks/useConnectivity';
 import { useUbicacionActual } from '../../hooks/useUbicacionActual';
 import { crearAlerta } from '../../services/alertasService';
-import { getErrorMessage } from '../../services/errors';
+import { esErrorDeRed, getErrorMessage } from '../../services/errors';
+import { guardarResultados, obtenerUltimosResultados } from '../../services/offline/resultadosCache';
 import { buscarPublicaciones } from '../../services/publicacionesService';
 import { getBarrios } from '../../services/userService';
 
 // Listado paginado + refinar + ordenar (sección 4.2 del plan). "cercanos" solo se habilita
 // si los filtros activos ya traen lat/lng (se usó ubicación en el buscador o al refinar).
 export default function ResultadosScreen({ route, navigation }) {
+  const { sinConexion } = useConnectivity();
   const [filtros, setFiltros] = useState(route.params.filtros);
   const [orden, setOrden] = useState('recientes');
   const [items, setItems] = useState([]);
@@ -29,11 +32,38 @@ export default function ResultadosScreen({ route, navigation }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [refineVisible, setRefineVisible] = useState(false);
+  // Punto 6 (sección 4.3 del plan): true cuando lo que se muestra viene del caché de la
+  // última búsqueda exitosa (sin conexión, o la request falló por red), no de un fetch
+  // recién hecho — desactiva la paginación (no tiene sentido pedir "más" de un snapshot
+  // fijo) y muestra el aviso de que la información puede no estar actualizada.
+  const [mostrandoCache, setMostrandoCache] = useState(false);
 
   const tieneUbicacion = filtros.lat != null && filtros.lng != null;
 
+  const cargarDesdeCache = useCallback(async (mensajeSiNoHay) => {
+    setLoading(true);
+    const cacheado = await obtenerUltimosResultados();
+    setLoading(false);
+    if (cacheado) {
+      setItems(cacheado.data);
+      setTotal(cacheado.total);
+      setPage(0);
+      setMostrandoCache(true);
+      setError('');
+    } else {
+      setItems([]);
+      setTotal(0);
+      setMostrandoCache(false);
+      setError(mensajeSiNoHay);
+    }
+  }, []);
+
   const cargarPagina = useCallback(
     async (pageNum, append) => {
+      if (sinConexion) {
+        await cargarDesdeCache('No hay conexión y todavía no guardamos resultados de una búsqueda anterior.');
+        return;
+      }
       try {
         if (append) setLoadingMore(true);
         else setLoading(true);
@@ -47,23 +77,32 @@ export default function ResultadosScreen({ route, navigation }) {
         setTotal(resultado.total);
         setPage(resultado.page);
         setError('');
+        setMostrandoCache(false);
+        // Solo la primera página de cada búsqueda: alcanza con "los últimos resultados
+        // cargados" (sección 4.3 del plan), no hace falta cachear todo el scroll
+        // acumulado de "cargar más".
+        if (!append) guardarResultados({ filtros, orden, data: resultado.data, total: resultado.total });
       } catch (e) {
+        if (esErrorDeRed(e)) {
+          await cargarDesdeCache(getErrorMessage(e));
+          return;
+        }
         setError(getErrorMessage(e));
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     },
-    [filtros, orden]
+    [filtros, orden, sinConexion, cargarDesdeCache]
   );
 
   useEffect(() => {
     cargarPagina(0, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtros, orden]);
+  }, [filtros, orden, sinConexion]);
 
   const pedirSiguientePagina = () => {
-    if (loadingMore || loading) return;
+    if (loadingMore || loading || mostrandoCache) return;
     if (items.length >= total) return;
     cargarPagina(page + 1, true);
   };
@@ -73,6 +112,7 @@ export default function ResultadosScreen({ route, navigation }) {
     setOrden(nuevoOrden);
   };
 
+  // "Guardar como alerta" necesita conexión (Punto 6, sección 5 del plan).
   const guardarComoAlerta = async () => {
     try {
       await crearAlerta(filtros);
@@ -116,6 +156,11 @@ export default function ResultadosScreen({ route, navigation }) {
         <Button title="Refinar" variant="secondary" onPress={() => setRefineVisible(true)} />
       </View>
 
+      {mostrandoCache ? (
+        <Text style={styles.avisoCache}>
+          Mostrando los últimos resultados guardados — pueden no estar actualizados.
+        </Text>
+      ) : null}
       <ErrorText message={error} />
 
       {loading ? (
@@ -127,7 +172,15 @@ export default function ResultadosScreen({ route, navigation }) {
             title={filtros.tipoBuscado === 'perdido' ? 'Publicar lo que perdí' : 'Publicar lo que encontré'}
             onPress={irAPublicar}
           />
-          <Button title="Guardar esta búsqueda como alerta" variant="secondary" onPress={guardarComoAlerta} />
+          <Button
+            title="Guardar esta búsqueda como alerta"
+            variant="secondary"
+            onPress={guardarComoAlerta}
+            disabled={sinConexion}
+          />
+          {sinConexion ? (
+            <Text style={styles.avisoSinConexion}>Necesitás conexión para guardar una alerta.</Text>
+          ) : null}
         </View>
       ) : (
         <FlatList
@@ -238,6 +291,16 @@ function RefinarModal({ visible, filtrosIniciales, onClose, onAplicar }) {
 }
 
 const styles = StyleSheet.create({
+  avisoCache: {
+    fontSize: 13,
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  avisoSinConexion: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
   barraOrden: {
     flexDirection: 'row',
     alignItems: 'center',

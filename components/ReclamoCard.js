@@ -16,7 +16,7 @@ const ESTADOS = {
   vencido: 'Vencido',
 };
 
-export default function ReclamoCard({ reclamo, recibido, onDecision, busy }) {
+export default function ReclamoCard({ reclamo, recibido, onDecision, busy, sinConexion }) {
   const persona = recibido
     ? { name: reclamo.autorNombre, photoUrl: reclamo.autorFotoUrl }
     : { name: reclamo.publicadorNombre, photoUrl: reclamo.publicadorFotoUrl };
@@ -57,8 +57,19 @@ export default function ReclamoCard({ reclamo, recibido, onDecision, busy }) {
         <>
           <Text style={styles.deadline}>Responder antes de {vence}</Text>
           <View style={styles.actions}>
-            <Button title="Rechazar" variant="secondary" onPress={() => onDecision(reclamo, 'rechazar')} loading={busy} />
-            <Button title="Aceptar" onPress={() => onDecision(reclamo, 'aceptar')} loading={busy} />
+            <Button
+              title="Rechazar"
+              variant="secondary"
+              onPress={() => onDecision(reclamo, 'rechazar')}
+              loading={busy}
+              disabled={sinConexion}
+            />
+            <Button
+              title="Aceptar"
+              onPress={() => onDecision(reclamo, 'aceptar')}
+              loading={busy}
+              disabled={sinConexion}
+            />
           </View>
         </>
       ) : null}
