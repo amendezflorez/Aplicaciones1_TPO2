@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
-import { guardarBorrador, borrarRegistroBorrador } from '../borradorPublicacionStorage';
+import { borrarRegistroBorrador, cargarBorrador, guardarBorrador } from '../borradorPublicacionStorage';
 
 // Capa de almacenamiento puro para la cola de publicaciones pendientes de envío (Punto 6,
 // sección 4.4 de PLAN_puntos_5_y_6.md): solo CRUD (listar/agregar/actualizar/quitar), sin
@@ -23,7 +23,10 @@ const claveColaDe = (userId) => `offline:colaPendientes:${userId}`;
 // clientRequestId ya es único por diseño — utils/uuid.js — así que alcanza para no
 // pisarse entre ítems, de cualquier usuario) para poder borrarlas todas juntas al
 // completar/descartar un ítem, sin tocar las de otros.
-const dirDe = (clientRequestId) => new Directory(Paths.document, 'cola-publicaciones', clientRequestId);
+const CARPETA_COLA = 'cola-publicaciones';
+const CARPETA_BORRADOR = 'borrador-publicacion'; // la de borradorPublicacionStorage.js
+const dirDe = (clientRequestId) => new Directory(Paths.document, CARPETA_COLA, clientRequestId);
+const dirBorradorDe = (clientRequestId) => new Directory(Paths.document, CARPETA_BORRADOR, clientRequestId);
 
 export async function listarCola(userId) {
   try {
@@ -48,24 +51,46 @@ async function guardarCola(userId, cola) {
   }
 }
 
-// Mueve la publicación de "borrador en edición" a "pendiente en la cola" (sección 4.4 del
-// plan): reusa el mismo directorio de fotos que ya armó borradorPublicacionStorage —no
-// copia ni descarga nada de nuevo— moviendo la carpeta entera de
-// borrador-publicacion/{clientRequestId} a cola-publicaciones/{clientRequestId}. Si el
-// move falla (caso raro), las fotos quedan donde estaban y el ítem las sigue referenciando
-// ahí: no se pierden, solo no se mudan.
-export async function agregarACola(userId, borrador) {
-  const origen = new Directory(Paths.document, 'borrador-publicacion', borrador.clientRequestId);
-  const destino = dirDe(borrador.clientRequestId);
-  let fotos = borrador.fotos;
-  if (origen.exists) {
-    try {
-      await origen.move(destino);
-      fotos = borrador.fotos.map((foto) => ({ ...foto, uri: new File(destino, nombreDe(foto.uri)).uri }));
-    } catch (e) {
-      console.warn('No se pudo mover la carpeta de fotos del borrador a la cola offline; se mantienen donde estaban', e);
-    }
+// Traslada la carpeta de fotos {carpetaOrigen}/{id} a {carpetaDestino}/{id} y devuelve las
+// fotos con sus URIs nuevas. Primero crea la carpeta padre de destino (sin ella el move
+// nativo falla con "The destination path does not exist") y mueve la carpeta DENTRO de
+// ella, conservando el nombre {id}; `move` actualiza `origen.uri` a donde quedó. Si el
+// move falla por cualquier otro motivo, copia foto por foto y borra el origen: nunca deja
+// las fotos compartidas entre el borrador y la cola, donde descartar uno borraría las del
+// otro. Solo si también falla la copia quedan las URIs originales (no se pierde nada).
+async function trasladarFotos(clientRequestId, carpetaOrigen, carpetaDestino, fotos) {
+  const origen = new Directory(Paths.document, carpetaOrigen, clientRequestId);
+  if (!origen.exists) return fotos;
+  const padre = new Directory(Paths.document, carpetaDestino);
+  const remapear = (dir) => fotos.map((foto) => ({ ...foto, uri: new File(dir, nombreDe(foto.uri)).uri }));
+  try {
+    padre.create({ intermediates: true, idempotent: true });
+    await origen.move(padre);
+    return remapear(origen);
+  } catch {
+    // sigue con la copia
   }
+  try {
+    const destino = new Directory(padre, clientRequestId);
+    destino.create({ intermediates: true, idempotent: true });
+    for (const foto of fotos) {
+      const archivo = new File(foto.uri);
+      if (archivo.exists) await archivo.copy(destino);
+    }
+    origen.delete();
+    return remapear(destino);
+  } catch (e) {
+    console.warn('No se pudieron trasladar las fotos de la publicación; quedan donde estaban', e);
+    return fotos;
+  }
+}
+
+// Mueve la publicación de "borrador en edición" a "pendiente en la cola" (sección 4.4 del
+// plan): reusa los archivos de fotos que ya armó borradorPublicacionStorage —no descarga
+// nada de nuevo— trasladando borrador-publicacion/{clientRequestId} a
+// cola-publicaciones/{clientRequestId} (ver trasladarFotos).
+export async function agregarACola(userId, borrador) {
+  const fotos = await trasladarFotos(borrador.clientRequestId, CARPETA_BORRADOR, CARPETA_COLA, borrador.fotos);
 
   const item = {
     clientRequestId: borrador.clientRequestId,
@@ -77,8 +102,8 @@ export async function agregarACola(userId, borrador) {
   const cola = await listarCola(userId);
   await guardarCola(userId, [...cola, item]);
   // Borra solo el registro del borrador en AsyncStorage: el directorio de fotos ya se
-  // movió (o, si falló, sigue intacto y en uso por este mismo ítem) — nunca hay que
-  // borrarlo acá.
+  // trasladó (o, si falló todo, sigue intacto y en uso por este mismo ítem) — nunca hay
+  // que borrarlo acá.
   await borrarRegistroBorrador(userId);
   return item;
 }
@@ -89,17 +114,24 @@ export async function actualizarItem(userId, clientRequestId, cambios) {
   await guardarCola(userId, siguiente);
 }
 
-// Éxito del procesador (colaProcesador.js): saca el ítem de la cola y borra sus fotos —ya
-// están subidas al backend, no hace falta conservarlas localmente.
+// Éxito del procesador (colaProcesador.js) o "Descartar": saca el ítem de la cola y borra
+// sus fotos —ya están subidas al backend, o la persona decidió no enviarla—. También borra
+// borrador-publicacion/{clientRequestId}: ítems encolados antes de corregir el traslado de
+// fotos quedaron con las fotos ahí. Si quedó un registro de borrador con este mismo
+// clientRequestId (el autoguardado del wizard podía re-escribirlo después de encolar),
+// también se descarta: es la misma publicación, ya enviada o descartada.
 export async function quitarDeCola(userId, clientRequestId) {
   const cola = await listarCola(userId);
   await guardarCola(userId, cola.filter((item) => item.clientRequestId !== clientRequestId));
-  try {
-    const dir = dirDe(clientRequestId);
-    if (dir.exists) dir.delete();
-  } catch {
-    // Si no se puede borrar la carpeta no es razón para romper el flujo de éxito.
+  for (const dir of [dirDe(clientRequestId), dirBorradorDe(clientRequestId)]) {
+    try {
+      if (dir.exists) dir.delete();
+    } catch {
+      // Si no se puede borrar la carpeta no es razón para romper el flujo de éxito.
+    }
   }
+  const borrador = await cargarBorrador(userId);
+  if (borrador?.clientRequestId === clientRequestId) await borrarRegistroBorrador(userId);
 }
 
 // "Descartar" desde Mis publicaciones (un ítem en estado 'error'): mismo efecto que
@@ -114,17 +146,9 @@ export async function pasarAEdicion(userId, clientRequestId) {
   const item = await obtenerItem(userId, clientRequestId);
   if (!item) return null;
 
-  const origen = dirDe(clientRequestId);
-  const destino = new Directory(Paths.document, 'borrador-publicacion', clientRequestId);
-  let fotos = item.borrador.fotos;
-  if (origen.exists) {
-    try {
-      await origen.move(destino);
-      fotos = item.borrador.fotos.map((foto) => ({ ...foto, uri: new File(destino, nombreDe(foto.uri)).uri }));
-    } catch (e) {
-      console.warn('No se pudo devolver la carpeta de fotos de la cola al borrador', e);
-    }
-  }
+  // Ítems viejos con las fotos todavía en borrador-publicacion/: no hay nada que trasladar
+  // (trasladarFotos devuelve las mismas URIs si no existe la carpeta de la cola).
+  const fotos = await trasladarFotos(clientRequestId, CARPETA_COLA, CARPETA_BORRADOR, item.borrador.fotos);
 
   const borradorEditable = { ...item.borrador, fotos };
   const cola = await listarCola(userId);

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Alert, FlatList, Image, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
@@ -10,6 +10,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useConnectivity } from '../../hooks/useConnectivity';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
 import { descartarItem, listarCola, pasarAEdicion } from '../../services/offline/colaPendientes';
+import { escucharColaProcesada } from '../../services/offline/colaProcesador';
 import { getMisPublicaciones, renovarPublicacion } from '../../services/publicacionesService';
 import { getBarrios } from '../../services/userService';
 
@@ -32,8 +33,9 @@ export default function MisPublicacionesScreen({ navigation }) {
   const [renovandoId, setRenovandoId] = useState(null);
   const [accionEnCurso, setAccionEnCurso] = useState(null);
 
-  const cargar = useCallback(async () => {
-    setLoading(true);
+  // `silencioso`: refresco disparado por la cola (ver abajo), sin spinner de carga.
+  const cargar = useCallback(async ({ silencioso = false } = {}) => {
+    if (!silencioso) setLoading(true);
     setCola(await listarCola(user.id));
     if (!sinConexion) {
       try {
@@ -53,6 +55,17 @@ export default function MisPublicacionesScreen({ navigation }) {
       cargar();
       getBarrios().then(setBarrios).catch(() => {});
     }, [cargar])
+  );
+
+  // Punto 6: al reconectar, la cola se procesa en segundo plano (AuthContext →
+  // colaProcesador). Si esta pantalla está abierta, cada pendiente enviado (o rechazado)
+  // la refresca sola: desaparece de pendientes y aparece como publicada.
+  useEffect(
+    () =>
+      escucharColaProcesada((userId) => {
+        if (userId === user.id) cargar({ silencioso: true });
+      }),
+    [cargar, user.id]
   );
 
   const renovar = async (id) => {

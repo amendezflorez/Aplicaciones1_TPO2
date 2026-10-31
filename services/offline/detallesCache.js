@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
+import { resolverUrlFoto } from '../../utils/fotoUrl';
 
 // Caché de detalles de publicación consultados con éxito (Punto 6, sección 4.2 de
 // PLAN_puntos_5_y_6.md): "la app conserva en el dispositivo las últimas publicaciones que
@@ -59,7 +60,7 @@ export async function guardarDetalle(detalle) {
     try {
       const destino = new File(dir, `${foto.id}.jpg`);
       if (!destino.exists) {
-        await File.downloadFileAsync(foto.url, destino, { idempotent: true });
+        await File.downloadFileAsync(resolverUrlFoto(foto.url), destino, { idempotent: true });
       }
       fotosLocales.push({ ...foto, url: destino.uri });
     } catch (e) {

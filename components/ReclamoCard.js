@@ -1,13 +1,8 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { API_BASE_URL } from '../config/env';
 import { colors, radius, spacing } from '../config/theme';
+import { resolverUrlFoto } from '../utils/fotoUrl';
 import Avatar from './Avatar';
 import Button from './Button';
-
-function resolveImageUri(uri) {
-  if (!uri || uri.startsWith('http')) return uri;
-  return `${API_BASE_URL.replace(/\/api\/?$/, '')}${uri.startsWith('/') ? '' : '/'}${uri}`;
-}
 
 const ESTADOS = {
   pendiente: 'Pendiente',
@@ -36,7 +31,7 @@ export default function ReclamoCard({ reclamo, recibido, onDecision, busy, sinCo
       </View>
 
       <View style={styles.person}>
-        <Avatar uri={resolveImageUri(persona.photoUrl)} name={persona.name || ''} size={36} />
+        <Avatar uri={persona.photoUrl} name={persona.name || ''} size={36} />
         <Text style={styles.personName}>{recibido ? 'De' : 'Publicador'}: {persona.name || 'Usuario'}</Text>
       </View>
 
@@ -50,7 +45,7 @@ export default function ReclamoCard({ reclamo, recibido, onDecision, busy, sinCo
         <Text style={styles.body}><Text style={styles.label}>Lo encontró en: </Text>{reclamo.barrioEncontrado.name}</Text>
       ) : null}
       {reclamo.fotoUrl ? (
-        <Image source={{ uri: resolveImageUri(reclamo.fotoUrl) }} style={styles.evidence} />
+        <Image source={{ uri: resolverUrlFoto(reclamo.fotoUrl) }} style={styles.evidence} />
       ) : null}
 
       {recibido && reclamo.estado === 'pendiente' ? (

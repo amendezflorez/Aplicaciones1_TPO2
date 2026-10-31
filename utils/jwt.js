@@ -10,3 +10,14 @@ export function isTokenExpired(token) {
     return true;
   }
 }
+
+// userId (claim `sub`) del token, o null si no hay token o no se puede decodificar. Lo
+// emiten igual el backend Java (JwtService) y el mock.
+export function getUserIdFromToken(token) {
+  if (!token) return null;
+  try {
+    return jwtDecode(token).sub ?? null;
+  } catch {
+    return null;
+  }
+}

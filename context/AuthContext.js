@@ -2,7 +2,7 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import { useConnectivity } from '../hooks/useConnectivity';
 import { setupInterceptors } from '../services/api';
 import { procesarColaPendientes } from '../services/offline/colaProcesador';
-import { getMe } from '../services/userService';
+import { getBarrios, getMe } from '../services/userService';
 import {
   deleteToken,
   getBiometricEnabled,
@@ -109,6 +109,10 @@ export function AuthProvider({ children }) {
     const volvioLaConexion = previo.estadoConexion === 'offline' && estadoConexion !== 'offline';
     if (autenticadoAhora && (recienAutenticado || volvioLaConexion)) {
       procesarColaPendientes(user.id);
+      // Precarga/refresca el caché de barrios (services/offline/barriosCache.js) para que
+      // el wizard de publicar funcione offline aunque nunca se haya abierto un picker de
+      // barrios con conexión. Sin conexión, getBarrios cae al caché y no pasa nada.
+      if (estadoConexion !== 'offline') getBarrios().catch(() => {});
     }
     previoRef.current = { status, estadoConexion };
   }, [status, estadoConexion, user]);

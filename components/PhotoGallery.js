@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Dimensions, FlatList, Image, StyleSheet, View } from 'react-native';
+import { Dimensions, FlatList, StyleSheet, View } from 'react-native';
 import { colors, radius, spacing } from '../config/theme';
+import FotoPublicacion from './FotoPublicacion';
 
 // Ancho del carrusel = ancho de pantalla menos el padding horizontal que ya aplica
 // <Screen> (spacing.md de cada lado) — si no, las fotos se ven más anchas que el resto
@@ -14,7 +15,7 @@ export default function PhotoGallery({ fotos }) {
   const [activa, setActiva] = useState(0);
 
   if (!fotos || fotos.length === 0) {
-    return <View style={[styles.imagen, styles.placeholder]} />;
+    return <FotoPublicacion url={null} style={styles.imagen} iconSize={56} />;
   }
 
   const onScrollEnd = (event) => {
@@ -31,7 +32,7 @@ export default function PhotoGallery({ fotos }) {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onScrollEnd}
-        renderItem={({ item }) => <Image source={{ uri: item.url }} style={styles.imagen} />}
+        renderItem={({ item }) => <FotoPublicacion key={item.url} url={item.url} style={styles.imagen} iconSize={56} />}
       />
       {fotos.length > 1 ? (
         <View style={styles.dots}>
@@ -49,9 +50,6 @@ const styles = StyleSheet.create({
     width: GALLERY_WIDTH,
     height: 240,
     borderRadius: radius.md,
-  },
-  placeholder: {
-    backgroundColor: colors.surface,
   },
   dots: {
     flexDirection: 'row',

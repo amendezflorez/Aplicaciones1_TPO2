@@ -1,5 +1,6 @@
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import EstadoChip from './EstadoChip';
+import FotoPublicacion from './FotoPublicacion';
 import { CATEGORIAS } from '../config/constants';
 import { colors, radius, spacing } from '../config/theme';
 import { formatFechaRelativa } from '../utils/publicacionFormatters';
@@ -10,13 +11,7 @@ export default function PublicationCard({ publicacion, onPress }) {
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress}>
-      {publicacion.fotoPrincipalUrl ? (
-        <Image source={{ uri: publicacion.fotoPrincipalUrl }} style={styles.foto} />
-      ) : (
-        <View style={[styles.foto, styles.fotoPlaceholder]}>
-          <Text style={styles.fotoPlaceholderText}>Sin foto</Text>
-        </View>
-      )}
+      <FotoPublicacion key={publicacion.fotoPrincipalUrl} url={publicacion.fotoPrincipalUrl} style={styles.foto} />
       <View style={styles.info}>
         <Text style={styles.titulo} numberOfLines={2}>
           {publicacion.titulo}
@@ -45,15 +40,6 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: radius.sm,
-  },
-  fotoPlaceholder: {
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fotoPlaceholderText: {
-    fontSize: 11,
-    color: colors.textMuted,
   },
   info: {
     flex: 1,

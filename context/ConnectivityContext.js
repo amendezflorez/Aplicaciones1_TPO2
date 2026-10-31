@@ -1,5 +1,6 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
+import { setSinConexion } from '../services/offline/estadoConexion';
 
 export const ConnectivityContext = createContext(null);
 
@@ -48,6 +49,9 @@ export function ConnectivityProvider({ children }) {
     }
     return 'desconocido'; // isConnected todavía null (arranque de la app)
   }, [netInfoState, forzadoOffline]);
+
+  // Para los servicios que viven fuera de React (ver services/offline/estadoConexion.js).
+  useEffect(() => setSinConexion(estado === 'offline'), [estado]);
 
   const notificarErrorDeRed = useCallback(() => setForzadoOffline(true), []);
 

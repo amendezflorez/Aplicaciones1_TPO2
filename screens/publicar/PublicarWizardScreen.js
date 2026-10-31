@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -17,13 +17,14 @@ import { useConnectivity } from '../../hooks/useConnectivity';
 import { useUbicacionActual } from '../../hooks/useUbicacionActual';
 import {
   borrarBorrador,
+  borrarRegistroBorrador,
   cargarBorrador,
   copiarFotoAlBorrador,
   eliminarArchivoBorrador,
   guardarBorrador,
 } from '../../services/borradorPublicacionStorage';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
-import { agregarACola } from '../../services/offline/colaPendientes';
+import { agregarACola, obtenerItem } from '../../services/offline/colaPendientes';
 import { enviarPublicacion } from '../../services/publicarPublicacion';
 import { getBarrios } from '../../services/userService';
 import { formatDireccionGeocodificada } from '../../utils/publicacionFormatters';
@@ -98,6 +99,10 @@ export default function PublicarWizardScreen({ route, navigation }) {
   const [clientRequestId, setClientRequestId] = useState(null);
 
   const [publicando, setPublicando] = useState(false);
+  // true una vez publicada o encolada: el autoguardado (debounce de 600ms) no debe volver a
+  // escribir el borrador después — si no, reaparece como "Publicación sin terminar" con el
+  // mismo clientRequestId del ítem encolado, y descartarlo borraría sus fotos.
+  const terminadoRef = useRef(false);
   const [errorEnvio, setErrorEnvio] = useState('');
 
   const pasos = useMemo(() => {
@@ -159,8 +164,15 @@ export default function PublicarWizardScreen({ route, navigation }) {
               style: 'destructive',
               onPress: async () => {
                 // El clientRequestId del borrador cargado (no el del estado: todavía no
-                // se seteó ninguno en este punto del montaje).
-                await borrarBorrador(user.id, guardado.clientRequestId);
+                // se seteó ninguno en este punto del montaje). Si ese id ya está en la
+                // cola offline (registro re-escrito por el autoguardado antes de este
+                // arreglo), sus fotos son las del ítem pendiente: solo se borra el
+                // registro, nunca la carpeta.
+                if (await obtenerItem(user.id, guardado.clientRequestId)) {
+                  await borrarRegistroBorrador(user.id);
+                } else {
+                  await borrarBorrador(user.id, guardado.clientRequestId);
+                }
                 if (vigente) {
                   iniciarDesdeParams();
                   setListo(true);
@@ -215,7 +227,9 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // mientras todavía se está preguntando.
   useEffect(() => {
     if (!listo) return undefined;
-    const id = setTimeout(() => guardarBorrador(user.id, construirBorrador()), 600);
+    const id = setTimeout(() => {
+      if (!terminadoRef.current) guardarBorrador(user.id, construirBorrador());
+    }, 600);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -266,6 +280,16 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // 5/6: el backend acepta "solo dirección escrita" y usa el centro del barrio como
   // respaldo para el mapa).
   const intentarGeocodificarDireccion = async (texto) => {
+    // En Android geocodeAsync exige permiso de ubicación, y sin red el Geocoder del sistema
+    // no responde: en esos casos se saltea en silencio (no se pide permiso solo para esto
+    // — el backend usa las coordenadas del barrio).
+    if (sinConexion) return;
+    try {
+      const { granted } = await Location.getForegroundPermissionsAsync();
+      if (!granted) return;
+    } catch {
+      return;
+    }
     try {
       const [primero] = await conTimeout(Location.geocodeAsync(texto), TIMEOUT_GEOCODING_MS);
       if (!primero) return;
@@ -412,6 +436,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // onFotoSubida ya lo fue guardando en el borrador mientras enviarPublicacion subía lo
   // que pudo antes de fallar.
   const encolarYSalir = async () => {
+    terminadoRef.current = true;
     await agregarACola(user.id, construirBorrador());
     setPublicando(false);
     Alert.alert(
@@ -441,11 +466,12 @@ export default function PublicarWizardScreen({ route, navigation }) {
         onFotoSubida: (foto, url) => {
           setFotos((actuales) => {
             const siguientes = actuales.map((f) => (f.uri === foto.uri ? { ...f, url } : f));
-            guardarBorrador(user.id, { ...base, fotos: siguientes });
+            if (!terminadoRef.current) guardarBorrador(user.id, { ...base, fotos: siguientes });
             return siguientes;
           });
         },
       });
+      terminadoRef.current = true;
       await borrarBorrador(user.id, clientRequestId);
       Alert.alert('¡Listo!', 'Tu publicación ya está activa.', [
         { text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisPublicaciones') },

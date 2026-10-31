@@ -2,12 +2,17 @@ import { useState } from 'react';
 import { FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../config/theme';
+import { useConnectivity } from '../hooks/useConnectivity';
 import Button from './Button';
 
 // Selector de barrio: muestra el seleccionado y abre una lista modal.
 export default function BarrioPicker({ barrios, selectedId, onSelect, error }) {
   const [visible, setVisible] = useState(false);
+  const { sinConexion } = useConnectivity();
   const selected = barrios.find((b) => b.id === selectedId);
+  // Lista vacía sin conexión = nunca se cargó con red (getBarrios ya cae al caché si lo
+  // hay, ver services/userService.js).
+  const sinListaOffline = barrios.length === 0 && sinConexion;
 
   const handleSelect = (barrio) => {
     onSelect(barrio);
@@ -25,6 +30,9 @@ export default function BarrioPicker({ barrios, selectedId, onSelect, error }) {
           {selected ? selected.name : 'Elegí tu barrio'}
         </Text>
       </TouchableOpacity>
+      {sinListaOffline ? (
+        <Text style={styles.aviso}>Necesitás conexión al menos una vez para cargar los barrios.</Text>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <Modal visible={visible} animationType="slide" onRequestClose={() => setVisible(false)}>
@@ -39,7 +47,13 @@ export default function BarrioPicker({ barrios, selectedId, onSelect, error }) {
                 </Text>
               </TouchableOpacity>
             )}
-            ListEmptyComponent={<Text style={styles.placeholder}>No hay barrios disponibles.</Text>}
+            ListEmptyComponent={
+              <Text style={[styles.placeholder, styles.vacio]}>
+                {sinListaOffline
+                  ? 'Necesitás conexión al menos una vez para cargar los barrios.'
+                  : 'No hay barrios disponibles.'}
+              </Text>
+            }
           />
           <View style={styles.footer}>
             <Button title="Cerrar" variant="secondary" onPress={() => setVisible(false)} />
@@ -80,6 +94,13 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 13,
     color: colors.error,
+  },
+  aviso: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  vacio: {
+    padding: spacing.md,
   },
   modal: {
     flex: 1,

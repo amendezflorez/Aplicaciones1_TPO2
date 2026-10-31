@@ -15,12 +15,16 @@ import { useConnectivity } from '../../hooks/useConnectivity';
 import { useUbicacionActual } from '../../hooks/useUbicacionActual';
 import { crearAlerta } from '../../services/alertasService';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
-import { guardarResultados, obtenerUltimosResultados } from '../../services/offline/resultadosCache';
+import { guardarResultados, obtenerResultadosGuardados } from '../../services/offline/resultadosCache';
 import { buscarPublicaciones } from '../../services/publicacionesService';
 import { getBarrios } from '../../services/userService';
+import { formatHaceCuanto } from '../../utils/publicacionFormatters';
 
 // Listado paginado + refinar + ordenar (sección 4.2 del plan). "cercanos" solo se habilita
 // si los filtros activos ya traen lat/lng (se usó ubicación en el buscador o al refinar).
+// Sin conexión, "Refinar" y "Cercanos" se deshabilitan (Punto 6): ambos son una búsqueda
+// nueva en el backend, y rehacerlos sobre la primera página guardada (≤ SEARCH_PAGE_SIZE
+// ítems) daría un resultado parcial que parece completo.
 export default function ResultadosScreen({ route, navigation }) {
   const { sinConexion } = useConnectivity();
   const [filtros, setFiltros] = useState(route.params.filtros);
@@ -32,31 +36,34 @@ export default function ResultadosScreen({ route, navigation }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [refineVisible, setRefineVisible] = useState(false);
-  // Punto 6 (sección 4.3 del plan): true cuando lo que se muestra viene del caché de la
-  // última búsqueda exitosa (sin conexión, o la request falló por red), no de un fetch
-  // recién hecho — desactiva la paginación (no tiene sentido pedir "más" de un snapshot
-  // fijo) y muestra el aviso de que la información puede no estar actualizada.
-  const [mostrandoCache, setMostrandoCache] = useState(false);
+  // Punto 6 (sección 4.3 del plan): no-null cuando lo que se muestra viene del caché (sin
+  // conexión, o la request falló por red), no de un fetch recién hecho —
+  // { coincide, resumen, cacheadoEn } de services/offline/resultadosCache.js. Desactiva la
+  // paginación (no tiene sentido pedir "más" de un snapshot fijo) y muestra el aviso.
+  const [cache, setCache] = useState(null);
 
   const tieneUbicacion = filtros.lat != null && filtros.lng != null;
 
-  const cargarDesdeCache = useCallback(async (mensajeSiNoHay) => {
-    setLoading(true);
-    const cacheado = await obtenerUltimosResultados();
-    setLoading(false);
-    if (cacheado) {
-      setItems(cacheado.data);
-      setTotal(cacheado.total);
-      setPage(0);
-      setMostrandoCache(true);
-      setError('');
-    } else {
-      setItems([]);
-      setTotal(0);
-      setMostrandoCache(false);
-      setError(mensajeSiNoHay);
-    }
-  }, []);
+  const cargarDesdeCache = useCallback(
+    async (mensajeSiNoHay) => {
+      setLoading(true);
+      const guardado = await obtenerResultadosGuardados(filtros, orden);
+      setLoading(false);
+      if (guardado) {
+        setItems(guardado.data);
+        setTotal(guardado.total);
+        setPage(0);
+        setCache({ coincide: guardado.coincide, resumen: guardado.resumen, cacheadoEn: guardado.cacheadoEn });
+        setError('');
+      } else {
+        setItems([]);
+        setTotal(0);
+        setCache(null);
+        setError(mensajeSiNoHay);
+      }
+    },
+    [filtros, orden]
+  );
 
   const cargarPagina = useCallback(
     async (pageNum, append) => {
@@ -77,7 +84,7 @@ export default function ResultadosScreen({ route, navigation }) {
         setTotal(resultado.total);
         setPage(resultado.page);
         setError('');
-        setMostrandoCache(false);
+        setCache(null);
         // Solo la primera página de cada búsqueda: alcanza con "los últimos resultados
         // cargados" (sección 4.3 del plan), no hace falta cachear todo el scroll
         // acumulado de "cargar más".
@@ -102,13 +109,13 @@ export default function ResultadosScreen({ route, navigation }) {
   }, [filtros, orden, sinConexion]);
 
   const pedirSiguientePagina = () => {
-    if (loadingMore || loading || mostrandoCache) return;
+    if (loadingMore || loading || cache) return;
     if (items.length >= total) return;
     cargarPagina(page + 1, true);
   };
 
   const cambiarOrden = (nuevoOrden) => {
-    if (nuevoOrden === 'cercanos' && !tieneUbicacion) return;
+    if (nuevoOrden === 'cercanos' && (!tieneUbicacion || sinConexion)) return;
     setOrden(nuevoOrden);
   };
 
@@ -145,20 +152,34 @@ export default function ResultadosScreen({ route, navigation }) {
           style={[
             styles.ordenChip,
             orden === 'cercanos' && styles.ordenChipActive,
-            !tieneUbicacion && styles.ordenChipDisabled,
+            (!tieneUbicacion || sinConexion) && styles.ordenChipDisabled,
           ]}
           onPress={() => cambiarOrden('cercanos')}
-          disabled={!tieneUbicacion}
+          disabled={!tieneUbicacion || sinConexion}
         >
           <Text style={[styles.ordenText, orden === 'cercanos' && styles.ordenTextActive]}>Cercanos</Text>
         </TouchableOpacity>
         <View style={styles.espacio} />
-        <Button title="Refinar" variant="secondary" onPress={() => setRefineVisible(true)} />
+        <Button
+          title="Refinar"
+          variant="secondary"
+          onPress={() => setRefineVisible(true)}
+          disabled={sinConexion}
+        />
       </View>
+      {sinConexion ? (
+        <Text style={styles.avisoSinConexion}>Necesitás conexión para refinar u ordenar por cercanía.</Text>
+      ) : null}
 
-      {mostrandoCache ? (
+      {cache?.coincide ? (
         <Text style={styles.avisoCache}>
-          Mostrando los últimos resultados guardados — pueden no estar actualizados.
+          Mostrando los últimos resultados guardados {formatHaceCuanto(cache.cacheadoEn)} — pueden no estar
+          actualizados.
+        </Text>
+      ) : cache ? (
+        <Text style={styles.avisoCache}>
+          No tenemos guardados resultados para esta búsqueda. Mostrando los de tu última búsqueda con conexión: {cache.resumen}{' '}
+          (guardados {formatHaceCuanto(cache.cacheadoEn)}) — pueden no estar actualizados.
         </Text>
       ) : null}
       <ErrorText message={error} />

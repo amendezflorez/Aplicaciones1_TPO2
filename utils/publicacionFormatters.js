@@ -11,6 +11,22 @@ export function formatFechaRelativa(isoDate) {
   return `hace ${diffDias} días`;
 }
 
+// Timestamp (ms) -> "hace un momento" / "hace 5 min" / "hace 2 h" / "ayer a las 14:30" /
+// "el 28/10 a las 14:30". Para "guardados <...>" del caché offline de resultados.
+export function formatHaceCuanto(timestamp) {
+  if (!timestamp) return '';
+  const fecha = new Date(timestamp);
+  const diffMin = Math.floor((Date.now() - fecha.getTime()) / 60000);
+  if (diffMin < 1) return 'hace un momento';
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const hora = `${fecha.getHours()}:${String(fecha.getMinutes()).padStart(2, '0')}`;
+  const hoy = new Date();
+  const ayer = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1);
+  if (fecha.toDateString() === hoy.toDateString()) return `hace ${Math.floor(diffMin / 60)} h`;
+  if (fecha.toDateString() === ayer.toDateString()) return `ayer a las ${hora}`;
+  return `el ${fecha.getDate()}/${fecha.getMonth() + 1} a las ${hora}`;
+}
+
 export function formatDistanciaKm(km) {
   if (km == null || Number.isNaN(km)) return '';
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
