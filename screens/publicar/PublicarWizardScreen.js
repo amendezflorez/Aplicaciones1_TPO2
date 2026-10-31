@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -13,15 +13,18 @@ import TextField from '../../components/TextField';
 import { CATEGORIAS, FRANJAS_HORARIAS, MAX_FOTOS_PUBLICACION } from '../../config/constants';
 import { colors, radius, spacing } from '../../config/theme';
 import { useAuth } from '../../hooks/useAuth';
+import { useConnectivity } from '../../hooks/useConnectivity';
 import { useUbicacionActual } from '../../hooks/useUbicacionActual';
 import {
   borrarBorrador,
+  borrarRegistroBorrador,
   cargarBorrador,
   copiarFotoAlBorrador,
   eliminarArchivoBorrador,
   guardarBorrador,
 } from '../../services/borradorPublicacionStorage';
-import { getErrorMessage } from '../../services/errors';
+import { esErrorDeRed, getErrorMessage } from '../../services/errors';
+import { agregarACola, obtenerItem } from '../../services/offline/colaPendientes';
 import { enviarPublicacion } from '../../services/publicarPublicacion';
 import { getBarrios } from '../../services/userService';
 import { formatDireccionGeocodificada } from '../../utils/publicacionFormatters';
@@ -65,6 +68,7 @@ const ETIQUETAS_CAMPOS = {
 // backend), así que la lista de pasos se arma dinámicamente.
 export default function PublicarWizardScreen({ route, navigation }) {
   const { user } = useAuth();
+  const { sinConexion } = useConnectivity();
   const {
     cargando: cargandoUbicacion,
     error: errorUbicacion,
@@ -95,6 +99,10 @@ export default function PublicarWizardScreen({ route, navigation }) {
   const [clientRequestId, setClientRequestId] = useState(null);
 
   const [publicando, setPublicando] = useState(false);
+  // true una vez publicada o encolada: el autoguardado (debounce de 600ms) no debe volver a
+  // escribir el borrador después — si no, reaparece como "Publicación sin terminar" con el
+  // mismo clientRequestId del ítem encolado, y descartarlo borraría sus fotos.
+  const terminadoRef = useRef(false);
   const [errorEnvio, setErrorEnvio] = useState('');
 
   const pasos = useMemo(() => {
@@ -155,7 +163,16 @@ export default function PublicarWizardScreen({ route, navigation }) {
               text: 'Descartar',
               style: 'destructive',
               onPress: async () => {
-                await borrarBorrador(user.id);
+                // El clientRequestId del borrador cargado (no el del estado: todavía no
+                // se seteó ninguno en este punto del montaje). Si ese id ya está en la
+                // cola offline (registro re-escrito por el autoguardado antes de este
+                // arreglo), sus fotos son las del ítem pendiente: solo se borra el
+                // registro, nunca la carpeta.
+                if (await obtenerItem(user.id, guardado.clientRequestId)) {
+                  await borrarRegistroBorrador(user.id);
+                } else {
+                  await borrarBorrador(user.id, guardado.clientRequestId);
+                }
                 if (vigente) {
                   iniciarDesdeParams();
                   setListo(true);
@@ -210,7 +227,9 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // mientras todavía se está preguntando.
   useEffect(() => {
     if (!listo) return undefined;
-    const id = setTimeout(() => guardarBorrador(user.id, construirBorrador()), 600);
+    const id = setTimeout(() => {
+      if (!terminadoRef.current) guardarBorrador(user.id, construirBorrador());
+    }, 600);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -261,6 +280,16 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // 5/6: el backend acepta "solo dirección escrita" y usa el centro del barrio como
   // respaldo para el mapa).
   const intentarGeocodificarDireccion = async (texto) => {
+    // En Android geocodeAsync exige permiso de ubicación, y sin red el Geocoder del sistema
+    // no responde: en esos casos se saltea en silencio (no se pide permiso solo para esto
+    // — el backend usa las coordenadas del barrio).
+    if (sinConexion) return;
+    try {
+      const { granted } = await Location.getForegroundPermissionsAsync();
+      if (!granted) return;
+    } catch {
+      return;
+    }
     try {
       const [primero] = await conTimeout(Location.geocodeAsync(texto), TIMEOUT_GEOCODING_MS);
       if (!primero) return;
@@ -277,7 +306,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
     setCopiandoFoto(true);
     try {
       for (const asset of assets) {
-        const uriPersistida = await copiarFotoAlBorrador(asset.uri);
+        const uriPersistida = await copiarFotoAlBorrador(asset.uri, clientRequestId);
         setFotos((actuales) => [...actuales, { uri: uriPersistida, url: null }]);
       }
     } catch {
@@ -400,27 +429,61 @@ export default function PublicarWizardScreen({ route, navigation }) {
     setIndice(Math.max(0, indice - 1));
   };
 
+  // Punto 6 (sección 4.4 del plan): sin conexión, el alta no se intenta (o se intenta y
+  // falla por red) — la publicación se encola en vez de perderse, y la cola la procesa
+  // services/offline/colaProcesador.js cuando vuelva la conexión. construirBorrador() se
+  // llama de nuevo acá (no se reusa `base`) para capturar el progreso real de `fotos`:
+  // onFotoSubida ya lo fue guardando en el borrador mientras enviarPublicacion subía lo
+  // que pudo antes de fallar.
+  const encolarYSalir = async () => {
+    terminadoRef.current = true;
+    await agregarACola(user.id, construirBorrador());
+    setPublicando(false);
+    Alert.alert(
+      'Sin conexión',
+      'Guardamos tu publicación. La vamos a enviar automáticamente apenas vuelva la conexión — podés verla en "Mis publicaciones" como pendiente de envío.',
+      [{ text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisPublicaciones') }]
+    );
+  };
+
   const publicar = async () => {
     setPublicando(true);
     setErrorEnvio('');
+
+    // Ya se sabe que no hay conexión: ni se intenta, para no hacerle esperar a la persona
+    // un timeout de red que ya sabemos que va a fallar.
+    if (sinConexion) {
+      await encolarYSalir();
+      return;
+    }
+
     const base = construirBorrador();
     try {
       await enviarPublicacion(base, {
         // Persiste qué fotos ya se subieron antes de seguir con la próxima: si falla a
-        // mitad de camino, "Retomar" en el próximo intento no las vuelve a subir.
+        // mitad de camino, "Retomar" (o la cola offline) en el próximo intento no las
+        // vuelve a subir.
         onFotoSubida: (foto, url) => {
           setFotos((actuales) => {
             const siguientes = actuales.map((f) => (f.uri === foto.uri ? { ...f, url } : f));
-            guardarBorrador(user.id, { ...base, fotos: siguientes });
+            if (!terminadoRef.current) guardarBorrador(user.id, { ...base, fotos: siguientes });
             return siguientes;
           });
         },
       });
-      await borrarBorrador(user.id);
+      terminadoRef.current = true;
+      await borrarBorrador(user.id, clientRequestId);
       Alert.alert('¡Listo!', 'Tu publicación ya está activa.', [
         { text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisPublicaciones') },
       ]);
     } catch (e) {
+      // NetInfo pudo no haber avisado todavía (o el problema es que el propio backend es
+      // inalcanzable, no la red del dispositivo): si la request falló sin respuesta,
+      // tratamos esto como offline igual, aunque sinConexion dijera que sí había conexión.
+      if (esErrorDeRed(e)) {
+        await encolarYSalir();
+        return;
+      }
       setErrorEnvio(getErrorMessage(e));
     } finally {
       setPublicando(false);

@@ -18,20 +18,27 @@ import { crearPublicacion, subirFotoPublicacion } from './publicacionesService';
 // llama (el wizard, o la cola offline) pueda persistir ese progreso parcial antes de
 // seguir con la siguiente — así un fallo a mitad de camino (ej. se cortó la conexión en la
 // foto 3 de 4) no obliga a resubir las que ya se subieron en el próximo intento.
+//
+// callbacks.antesDeCadaRequest(): opcional, se espera antes de cada subida y del POST
+// final; si lanza, se corta el envío. La cola offline lo usa para no seguir mandando con
+// la sesión de OTRA persona si mientras tanto se cerró sesión y entró otro usuario (el
+// interceptor de api.js toma el token vigente en cada request).
 export async function enviarPublicacion(borrador, callbacks = {}) {
-  const { onFotoSubida } = callbacks;
+  const { onFotoSubida, antesDeCadaRequest } = callbacks;
   const fotos = [];
   for (const foto of borrador.fotos) {
     if (foto.url) {
       fotos.push(foto.url);
       continue;
     }
+    await antesDeCadaRequest?.();
     const { photoUrl } = await subirFotoPublicacion(foto.uri);
     fotos.push(photoUrl);
     onFotoSubida?.(foto, photoUrl);
   }
 
   const esEncontrado = borrador.tipo === 'encontrado';
+  await antesDeCadaRequest?.();
 
   return crearPublicacion({
     tipo: borrador.tipo,

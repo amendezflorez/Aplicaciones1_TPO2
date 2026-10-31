@@ -9,6 +9,7 @@ import Screen from '../../components/Screen';
 import TextField from '../../components/TextField';
 import { colors, spacing } from '../../config/theme';
 import { useAuth } from '../../hooks/useAuth';
+import { useConnectivity } from '../../hooks/useConnectivity';
 import { getErrorMessage } from '../../services/errors';
 import { getBarrios, updateMe, uploadPhoto } from '../../services/userService';
 import { isValidName, isValidPhone } from '../../utils/validators';
@@ -17,6 +18,7 @@ const PICKER_OPTIONS = { mediaTypes: ['images'], allowsEditing: true, aspect: [1
 
 export default function EditProfileScreen({ navigation }) {
   const { user, updateUser } = useAuth();
+  const { sinConexion } = useConnectivity();
   const [name, setName] = useState(user?.name ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
   const [phoneVisible, setPhoneVisible] = useState(user?.phoneVisible ?? false);
@@ -122,7 +124,8 @@ export default function EditProfileScreen({ navigation }) {
       </Text>
 
       <ErrorText message={saveError} />
-      <Button title="Guardar" onPress={handleSave} loading={saving} />
+      {sinConexion ? <Text style={styles.hint}>Necesitás conexión para guardar los cambios.</Text> : null}
+      <Button title="Guardar" onPress={handleSave} loading={saving} disabled={sinConexion} />
     </Screen>
   );
 }

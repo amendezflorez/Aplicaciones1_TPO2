@@ -1,3 +1,13 @@
+// Punto 6 (sin conexión): true si Axios no recibió respuesta del servidor — falla de red
+// real (sin wifi/datos, servidor inalcanzable, timeout), no un 4xx/5xx que el backend sí
+// contestó. Mismo chequeo que ya usa getErrorMessage para elegir su primer mensaje, pero
+// expuesto aparte: las pantallas y la cola offline (services/offline/) lo usan para decidir
+// si caen al caché / encolan un reintento, en vez de confiar solo en lo que diga NetInfo
+// (puede no reflejar que el propio backend está caído o la conexión es muy mala).
+export function esErrorDeRed(error) {
+  return !error?.response;
+}
+
 // Traduce un error de Axios a un mensaje en español para el usuario.
 // `overrides` permite personalizar por código HTTP según la pantalla: { 409: '...' }.
 export function getErrorMessage(error, overrides = {}) {

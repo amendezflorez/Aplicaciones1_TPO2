@@ -2,13 +2,16 @@ import { useCallback, useState } from 'react';
 import { Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
+import { useConnectivity } from '../../hooks/useConnectivity';
 import { useReclamos } from '../../hooks/useReclamos';
 import { colors, radius, spacing } from '../../config/theme';
 import ErrorText from '../../components/ErrorText';
+import OfflineBanner from '../../components/OfflineBanner';
 import ReclamoCard from '../../components/ReclamoCard';
 
 export default function MisReclamosScreen() {
   const { user } = useAuth();
+  const { sinConexion } = useConnectivity();
   const { reclamos, loading, error, refresh, decidir } = useReclamos();
   const [vista, setVista] = useState('recibidos');
   const [decisionEnCurso, setDecisionEnCurso] = useState(null);
@@ -49,6 +52,10 @@ export default function MisReclamosScreen() {
 
   return (
     <View style={styles.container}>
+      <OfflineBanner />
+      {sinConexion && recibidos ? (
+        <Text style={styles.avisoSinConexion}>Necesitás conexión para aceptar o rechazar reclamos.</Text>
+      ) : null}
       <View style={styles.tabs}>
         {[
           { id: 'recibidos', label: `Recibidos (${reclamos.filter((item) => item.publicadorId === user?.id).length})` },
@@ -78,6 +85,7 @@ export default function MisReclamosScreen() {
             recibido={recibidos}
             onDecision={confirmarDecision}
             busy={decisionEnCurso === item.id}
+            sinConexion={sinConexion}
           />
         )}
         ListEmptyComponent={(
@@ -93,6 +101,13 @@ export default function MisReclamosScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  avisoSinConexion: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
   tabs: { flexDirection: 'row', margin: spacing.md, borderBottomWidth: 1, borderColor: colors.border },
   tab: { flex: 1, paddingVertical: spacing.md, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabSelected: { borderBottomColor: colors.primary },

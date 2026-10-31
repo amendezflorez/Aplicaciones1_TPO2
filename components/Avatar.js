@@ -1,11 +1,12 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../config/theme';
+import { resolverUrlFoto } from '../utils/fotoUrl';
 
 export default function Avatar({ uri, name = '', size = 96 }) {
   const dimension = { width: size, height: size, borderRadius: size / 2 };
 
   if (uri) {
-    return <Image source={{ uri }} style={[styles.image, dimension]} />;
+    return <Image source={{ uri: resolverUrlFoto(uri) }} style={[styles.image, dimension]} />;
   }
 
   return (
