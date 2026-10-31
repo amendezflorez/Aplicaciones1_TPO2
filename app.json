@@ -35,7 +35,8 @@
           "cameraPermission": "Permitir que $(PRODUCT_NAME) use la cámara para tomar la foto de perfil."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ]
   }
 }

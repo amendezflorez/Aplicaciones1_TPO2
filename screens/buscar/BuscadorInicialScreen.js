@@ -33,9 +33,10 @@ export default function BuscadorInicialScreen({ navigation }) {
   const {
     ubicacion,
     cargando: cargandoUbicacion,
-    permisoDenegado,
+    error: errorUbicacion,
     obtenerUbicacion,
     limpiarUbicacion,
+    abrirConfiguracion,
   } = useUbicacionActual();
   const { ultimasBusquedas, guardarBusqueda } = useSearchHistory();
 
@@ -157,9 +158,10 @@ export default function BuscadorInicialScreen({ navigation }) {
             onSelectBarrio={seleccionarBarrio}
             ubicacion={ubicacion}
             cargandoUbicacion={cargandoUbicacion}
-            permisoDenegado={permisoDenegado}
+            error={errorUbicacion}
             onUsarUbicacion={usarUbicacion}
             onQuitarUbicacion={limpiarUbicacion}
+            onAbrirConfiguracion={abrirConfiguracion}
           />
         </View>
       ) : null}

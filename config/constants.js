@@ -2,6 +2,10 @@ export const STORAGE_KEYS = {
   token: 'token',
   biometricEnabled: 'biometricEnabled',
   ultimasBusquedas: 'ultimasBusquedas',
+  // Prefijo, no clave fija: el borrador del wizard de publicar (Punto 5) se guarda por
+  // usuario (`${borradorPublicacionPrefix}:${userId}`), para no mezclar el borrador de una
+  // cuenta con el de otra en el mismo dispositivo — ver services/borradorPublicacionStorage.js.
+  borradorPublicacionPrefix: 'borradorPublicacion',
 };
 
 export const OTP_LENGTH = 6;
@@ -34,3 +38,7 @@ export const FRANJAS_HORARIAS = [
 
 export const SEARCH_PAGE_SIZE = 10;
 export const MAX_BUSQUEDAS_RECIENTES = 5;
+
+// Punto 5 (publicar). Tope arbitrario para que la carga no se vuelva lenta/pesada en un
+// dispositivo de gama baja; el backend no impone un máximo propio.
+export const MAX_FOTOS_PUBLICACION = 6;

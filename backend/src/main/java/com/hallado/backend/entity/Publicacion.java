@@ -11,17 +11,21 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
 
-// Puntos 3 y 4. "lat"/"lng" son la ubicación aproximada que se muestra siempre (mapa de
-// resultados); "latExacta"/"lngExacta"/"direccionExacta" son el dato preciso del hecho y
-// solo se exponen en el detalle si hay un Reclamo ACEPTADO del usuario o es su propia
+// Puntos 3 y 4 (lectura) + Punto 5 (alta/gestión, ver PLAN_puntos_5_y_6.md). "lat"/"lng"
+// son la ubicación aproximada que se muestra siempre (mapa de resultados);
+// "latExacta"/"lngExacta"/"direccionExacta" son el dato preciso del hecho y solo se
+// exponen en el detalle si hay un Reclamo ACEPTADO del usuario o es su propia
 // publicación (PublicacionMapper hace la gating, nunca el cliente).
 // "preguntaVerificacion" (solo si tipo=ENCONTRADO) sí viaja en el detalle para que
 // cualquiera pueda intentar un reclamo "Es mío"; "respuestaVerificacion" nunca se expone
 // en ningún DTO (se compara server-side al validar el reclamo, trabajo del Punto 7).
 @Entity
-@Table(name = "publicaciones")
+@Table(
+        name = "publicaciones",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"publicador_id", "client_request_id"}))
 public class Publicacion {
 
     @Id
@@ -83,6 +87,15 @@ public class Publicacion {
     private Instant creadaEn;
 
     private Instant venceEn;
+
+    // Idempotencia del alta (Punto 6, cola offline): el cliente genera un id propio por
+    // intento de publicar; si un POST /publicaciones repetido (reintento tras perder la
+    // respuesta del primero, sin conexión intermitente) llega con un clientRequestId que
+    // ya existe para ese publicador, el backend devuelve la publicación ya creada en vez
+    // de duplicarla. Único por publicador, no global, para no exigirle al cliente un UUID
+    // con colisión prácticamente imposible entre usuarios distintos.
+    @Column(name = "client_request_id")
+    private String clientRequestId;
 
     public String getId() {
         return id;
@@ -234,5 +247,13 @@ public class Publicacion {
 
     public void setVenceEn(Instant venceEn) {
         this.venceEn = venceEn;
+    }
+
+    public String getClientRequestId() {
+        return clientRequestId;
+    }
+
+    public void setClientRequestId(String clientRequestId) {
+        this.clientRequestId = clientRequestId;
     }
 }

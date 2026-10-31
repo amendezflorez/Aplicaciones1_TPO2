@@ -2,6 +2,7 @@ package com.hallado.backend.service;
 
 import com.hallado.backend.dto.response.BarrioResponse;
 import com.hallado.backend.dto.response.FotoPublicacionResponse;
+import com.hallado.backend.dto.response.MiPublicacionResponse;
 import com.hallado.backend.dto.response.PublicacionDetalleResponse;
 import com.hallado.backend.dto.response.PublicacionResumenResponse;
 import com.hallado.backend.dto.response.PublicadorResponse;
@@ -90,6 +91,25 @@ public class PublicacionMapper {
                 siguiendo);
     }
 
+    // Punto 5: item de "Mis publicaciones". "puedeRenovar" la calcula el llamador
+    // (PublicacionService) porque depende de la hora actual, no es un dato de la entidad.
+    public MiPublicacionResponse toMia(Publicacion p, boolean puedeRenovar) {
+        return new MiPublicacionResponse(
+                p.getId(),
+                p.getTipo(),
+                p.getTitulo(),
+                p.getCategoria(),
+                toBarrioResponse(p.getBarrio()),
+                p.getFechaSuceso(),
+                p.getLat(),
+                p.getLng(),
+                fotoPrincipalUrl(p.getId()),
+                p.getEstado(),
+                p.getCreadaEn(),
+                p.getVenceEn(),
+                puedeRenovar);
+    }
+
     private String fotoPrincipalUrl(String publicacionId) {
         List<FotoPublicacion> fotos = fotoPublicacionRepository.findByPublicacionIdOrderByOrdenAsc(publicacionId);
         return fotos.stream()
@@ -99,6 +119,6 @@ public class PublicacionMapper {
     }
 
     private BarrioResponse toBarrioResponse(Barrio barrio) {
-        return barrio == null ? null : new BarrioResponse(barrio.getId(), barrio.getName());
+        return BarrioResponse.of(barrio);
     }
 }

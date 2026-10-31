@@ -105,7 +105,7 @@ public class AlertaService {
                 alerta.getTipoBuscado(),
                 alerta.getCategoria(),
                 alerta.getTexto(),
-                barrio == null ? null : new BarrioResponse(barrio.getId(), barrio.getName()),
+                BarrioResponse.of(barrio),
                 alerta.getCreadaEn(),
                 novedadesCount);
     }

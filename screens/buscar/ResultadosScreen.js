@@ -82,9 +82,14 @@ export default function ResultadosScreen({ route, navigation }) {
     }
   };
 
+  // Punto 5: precarga el wizard con lo que la persona ya tipeó acá (sección 4 de
+  // PLAN_puntos_5_y_6.md) — tipoBuscado es literalmente "perdí/encontré" tal como lo
+  // eligió en el paso 1 del buscador, mismo valor que espera el wizard como "tipo".
   const irAPublicar = () => {
-    // Punto 5 (alta de publicación) todavía no existe en este plan — ver sección 0.
-    Alert.alert('Próximamente', 'Esta pantalla va a estar disponible cuando esté lista "Mi publicación".');
+    navigation.navigate('Publicar', {
+      screen: 'PublicarWizard',
+      params: { tipo: filtros.tipoBuscado, categoria: filtros.categoria, barrioId: filtros.barrioId },
+    });
   };
 
   return (
@@ -164,7 +169,7 @@ function RefinarModal({ visible, filtrosIniciales, onClose, onAplicar }) {
   const [rango, setRango] = useState(filtrosIniciales.rango ?? null);
   const [desde, setDesde] = useState(filtrosIniciales.desde ? new Date(filtrosIniciales.desde) : null);
   const [hasta, setHasta] = useState(filtrosIniciales.hasta ? new Date(filtrosIniciales.hasta) : null);
-  const { ubicacion, cargando, permisoDenegado, obtenerUbicacion } = useUbicacionActual();
+  const { ubicacion, cargando, error: errorUbicacion, obtenerUbicacion, abrirConfiguracion } = useUbicacionActual();
 
   useEffect(() => {
     if (visible) getBarrios().then(setBarrios).catch(() => {});
@@ -209,9 +214,10 @@ function RefinarModal({ visible, filtrosIniciales, onClose, onAplicar }) {
             }}
             ubicacion={ubicacionActiva ? (ubicacion ?? { lat: filtrosIniciales.lat, lng: filtrosIniciales.lng }) : null}
             cargandoUbicacion={cargando}
-            permisoDenegado={permisoDenegado}
+            error={errorUbicacion}
             onUsarUbicacion={usarUbicacion}
             onQuitarUbicacion={() => setUbicacionActiva(false)}
+            onAbrirConfiguracion={abrirConfiguracion}
           />
           <RangoFechaPicker
             rango={rango}

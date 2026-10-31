@@ -229,7 +229,7 @@ public class ReclamoService {
                 reclamo.getRespuestaPregunta(),
                 reclamo.getDescripcion(),
                 reclamo.getFotoUrl(),
-                barrio == null ? null : new BarrioResponse(barrio.getId(), barrio.getName()),
+                BarrioResponse.of(barrio),
                 reclamo.getEstado(),
                 reclamo.getCreadaEn());
     }
@@ -249,9 +249,7 @@ public class ReclamoService {
                 reclamo.getRespuestaPregunta(),
                 reclamo.getDescripcion(),
                 reclamo.getFotoUrl(),
-                reclamo.getBarrioEncontrado() == null
-                        ? null
-                        : new BarrioResponse(reclamo.getBarrioEncontrado().getId(), reclamo.getBarrioEncontrado().getName()),
+                BarrioResponse.of(reclamo.getBarrioEncontrado()),
                 reclamo.getEstado(),
                 reclamo.getCreadaEn(),
                 reclamo.getCreadaEn().plus(PLAZO_RESPUESTA));

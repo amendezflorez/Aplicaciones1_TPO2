@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -45,18 +46,51 @@ public class DataSeeder implements CommandLineRunner {
         this.fotoPublicacionRepository = fotoPublicacionRepository;
     }
 
+    // Centro aproximado de cada barrio (Punto 5, sección 10.x del plan 5/6): mismas
+    // coordenadas que ya usaba seedPublicaciones para sus publicaciones de prueba en cada
+    // barrio, reusadas acá para no inventar números nuevos. Es el respaldo que usa
+    // PublicacionService.crear cuando el alta de una publicación solo trae la dirección
+    // escrita, sin GPS ni geocoding exitoso del lado del cliente.
+    private static final Map<String, double[]> COORDENADAS_BARRIOS = Map.of(
+            "b1", new double[] {-34.5875, -58.4205}, // Palermo
+            "b2", new double[] {-34.5633, -58.4550}, // Belgrano
+            "b3", new double[] {-34.6189, -58.4433}, // Caballito
+            "b4", new double[] {-34.5875, -58.3974}, // Recoleta
+            "b5", new double[] {-34.5703, -58.4891}, // Villa Urquiza
+            "b6", new double[] {-34.6333, -58.4667}, // Flores
+            "b7", new double[] {-34.6089, -58.4205}, // Almagro
+            "b8", new double[] {-34.6210, -58.3731}); // San Telmo
+
     @Override
     public void run(String... args) {
         if (barrioRepository.count() == 0) {
             barrioRepository.saveAll(List.of(
-                    new Barrio("b1", "Palermo"),
-                    new Barrio("b2", "Belgrano"),
-                    new Barrio("b3", "Caballito"),
-                    new Barrio("b4", "Recoleta"),
-                    new Barrio("b5", "Villa Urquiza"),
-                    new Barrio("b6", "Flores"),
-                    new Barrio("b7", "Almagro"),
-                    new Barrio("b8", "San Telmo")));
+                    nuevoBarrio("b1", "Palermo"),
+                    nuevoBarrio("b2", "Belgrano"),
+                    nuevoBarrio("b3", "Caballito"),
+                    nuevoBarrio("b4", "Recoleta"),
+                    nuevoBarrio("b5", "Villa Urquiza"),
+                    nuevoBarrio("b6", "Flores"),
+                    nuevoBarrio("b7", "Almagro"),
+                    nuevoBarrio("b8", "San Telmo")));
+        } else {
+            // Backfill para bases que ya tenían estos 8 barrios sembrados antes de que
+            // Barrio tuviera lat/lng (Punto 5): sin esto, quien ya había levantado el
+            // backend se quedaba con barrios sin coordenadas y el fallback de
+            // PublicacionService.crear fallaba igual que antes del fix. Solo toca filas
+            // que todavía tienen lat null.
+            List<Barrio> aActualizar = new ArrayList<>();
+            for (Barrio barrio : barrioRepository.findAll()) {
+                double[] coords = COORDENADAS_BARRIOS.get(barrio.getId());
+                if (coords != null && barrio.getLat() == null) {
+                    barrio.setLat(coords[0]);
+                    barrio.setLng(coords[1]);
+                    aActualizar.add(barrio);
+                }
+            }
+            if (!aActualizar.isEmpty()) {
+                barrioRepository.saveAll(aActualizar);
+            }
         }
 
         if (userRepository.count() == 0) {
@@ -185,6 +219,11 @@ public class DataSeeder implements CommandLineRunner {
             foto.setOrden(0);
             fotoPublicacionRepository.save(foto);
         }
+    }
+
+    private Barrio nuevoBarrio(String id, String name) {
+        double[] coords = COORDENADAS_BARRIOS.get(id);
+        return new Barrio(id, name, coords[0], coords[1]);
     }
 
     private Publicacion nueva(
