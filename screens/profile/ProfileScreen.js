@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import AgradecimientosList from '../../components/AgradecimientosList';
 import Avatar from '../../components/Avatar';
 import Button from '../../components/Button';
 import ReputationSummary from '../../components/ReputationSummary';
@@ -31,7 +32,17 @@ export default function ProfileScreen({ navigation }) {
 
       <ReputationSummary reputation={user?.reputation} badges={user?.badges} />
 
-      <Button title="Editar perfil" onPress={() => navigation.navigate('EditProfile')} />
+      {user?.id ? <AgradecimientosList userId={user.id} /> : null}
+
+      <Button
+        title="Historial de casos resueltos"
+        onPress={() => navigation.navigate('Historial')}
+      />
+      <Button
+        title="Editar perfil"
+        variant="secondary"
+        onPress={() => navigation.navigate('EditProfile')}
+      />
       <Button
         title="Configuración"
         variant="secondary"

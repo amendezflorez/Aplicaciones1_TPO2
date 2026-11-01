@@ -11,4 +11,4 @@ export const API_BASE_URL = 'http://192.168.0.20:3000/api';
 // false (valor actual): usa el backend real (backend/, Spring Boot). Si no está
 // levantado, las pantallas muestran "No se pudo conectar con el servidor" en vez de
 // fallar en silencio: no hay fallback automático al mock.
-export const USE_MOCK = false;
+export const USE_MOCK = true;
