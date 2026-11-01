@@ -1,15 +1,16 @@
 import { useCallback, useState } from 'react';
 import { Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../../hooks/useAuth';
 import { useConnectivity } from '../../hooks/useConnectivity';
 import { useReclamos } from '../../hooks/useReclamos';
-import { colors, radius, spacing } from '../../config/theme';
+import { colors, spacing } from '../../config/theme';
 import ErrorText from '../../components/ErrorText';
 import OfflineBanner from '../../components/OfflineBanner';
 import ReclamoCard from '../../components/ReclamoCard';
 
 export default function MisReclamosScreen() {
+  const navigation = useNavigation();
   const { user } = useAuth();
   const { sinConexion } = useConnectivity();
   const { reclamos, loading, error, refresh, decidir } = useReclamos();
@@ -50,6 +51,10 @@ export default function MisReclamosScreen() {
     );
   };
 
+  const abrirEncuentro = (reclamo) => {
+    navigation.navigate('PuntoEncuentro', { reclamoId: reclamo.id });
+  };
+
   return (
     <View style={styles.container}>
       <OfflineBanner />
@@ -84,6 +89,7 @@ export default function MisReclamosScreen() {
             reclamo={item}
             recibido={recibidos}
             onDecision={confirmarDecision}
+            onOpenEncuentro={abrirEncuentro}
             busy={decisionEnCurso === item.id}
             sinConexion={sinConexion}
           />

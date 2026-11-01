@@ -16,6 +16,19 @@ export const getMisReclamos = async () => (await api.get('/reclamos')).data;
 export const decidirReclamo = async (reclamoId, decision) =>
   (await api.patch(`/reclamos/${reclamoId}/decision`, { decision })).data;
 
+// Contrato del Punto 8: el servidor persiste la negociación y sus rutas requieren
+// un reclamo aceptado. GET devuelve estado sin_propuesta|pendiente|acordado,
+// propuestaActual y ubicacionAcordada; cada ubicación incluye id, direccion,
+// referencia, latitud, longitud y propuestoPorId cuando esos datos aplican.
+export const getEncuentro = async (reclamoId) =>
+  (await api.get(`/reclamos/${reclamoId}/encuentro`)).data;
+
+export const proponerEncuentro = async (reclamoId, ubicacion) =>
+  (await api.post(`/reclamos/${reclamoId}/encuentro/propuestas`, ubicacion)).data;
+
+export const aceptarPropuestaEncuentro = async (reclamoId, propuestaId) =>
+  (await api.post(`/reclamos/${reclamoId}/encuentro/propuestas/${propuestaId}/aceptar`)).data;
+
 // Sube la foto que pide "Lo encontré" (mismo patrón de dos pasos que la foto de perfil en
 // userService.uploadPhoto: subir primero, mandar la URL ya resuelta en crearReclamo).
 export async function subirFotoReclamo(uri) {

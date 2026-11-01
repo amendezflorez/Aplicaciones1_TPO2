@@ -142,7 +142,7 @@ Al renovar: `estado = ABIERTA`, `venceEn = ahora + 30 días`. El mismo criterio 
 
 ### 4.6 `respuestaVerificacion` nunca se expone
 
-Se verificó explícitamente (manualmente, con requests reales contra el backend corriendo) que `respuestaVerificacion` no aparece en ningún DTO de lectura: ni en `PublicacionResumenResponse` (buscador), ni en `PublicacionDetalleResponse` (detalle y la propia respuesta del alta), ni en `MiPublicacionResponse` ("mis publicaciones"). Solo existe en la entidad `Publicacion` y en el campo de entrada `CrearPublicacionRequest.respuestaVerificacion`; su comparación contra la respuesta de un reclamo "Es mío" sigue siendo trabajo del Punto 7 (ya implementado: el publicador la evalúa manualmente al decidir, sin comparación automática — ver `PLAN_punto_7.md` sección 6.2).
+Se verificó explícitamente (manualmente, con requests reales contra el backend corriendo) que `respuestaVerificacion` no aparece en ningún DTO de lectura: ni en `PublicacionResumenResponse` (buscador), ni en `PublicacionDetalleResponse` (detalle y la propia respuesta del alta), ni en `MiPublicacionResponse` ("mis publicaciones"). Solo existe en la entidad `Publicacion` y en el campo de entrada `CrearPublicacionRequest.respuestaVerificacion`; su comparación contra la respuesta de un reclamo "Es mío" sigue siendo trabajo del Punto 7 (ya implementado: el publicador la evalúa manualmente al decidir, sin comparación automática — ver `PLAN_puntos_7y8.md` sección 6.2).
 
 ## 5. Criterios de aceptación
 
@@ -228,7 +228,7 @@ También se puede inspeccionar/editar la base directamente vía la consola H2 (`
 3. **Punto 6 (offline) completo**: cola de alta pendiente de envío, caché de últimas publicaciones vistas, búsqueda sin conexión con aviso, deshabilitar acciones que requieren red. `clientRequestId` (backend) y `services/publicarPublicacion.js`/`services/borradorPublicacionStorage.js` (frontend) ya quedaron preparados para que esa cola los reutilice, pero la cola ni `NetInfo` en sí no están implementados — ver sección 13.
 4. **"Próxima a vencer" = 5 días**: es un criterio razonable pero no está en la letra del TP (que solo dice "vencen a los 30 días y pueden renovarse"); si la cátedra da un número distinto, es un solo valor a cambiar (`PublicacionService.VENTANA_RENOVACION_ANTICIPADA`).
 5. **Dirección y coordenadas siempre obligatorias**: ~~se decidió exigir ambas (ver sección 4.2)~~ — **resuelto en la sección 14.2**: ahora alcanza con una de las dos (consigna del TP), con el centro del barrio como respaldo del lado del servidor y `Location.geocodeAsync` como mejor esfuerzo del lado del cliente.
-6. **Fotos de publicación en disco local**: mismo `PhotoStorageService` que fotos de perfil/reclamo — para desplegar en más de una instancia hace falta almacenamiento compartido (ya señalado como pendiente en `PLAN_punto_7.md`).
+6. **Fotos de publicación en disco local**: mismo `PhotoStorageService` que fotos de perfil/reclamo — para desplegar en más de una instancia hace falta almacenamiento compartido (ya señalado como pendiente en `PLAN_puntos_7y8.md`).
 
 ## 8. Alcance técnico (frontend)
 
