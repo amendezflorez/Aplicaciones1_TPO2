@@ -15,6 +15,10 @@ import com.hallado.backend.entity.Alerta;
 import com.hallado.backend.entity.Seguimiento;
 import com.hallado.backend.repository.AlertaRepository;
 import com.hallado.backend.repository.SeguimientoRepository;
+import com.hallado.backend.entity.CasoResuelto;
+import com.hallado.backend.entity.Valoracion;
+import com.hallado.backend.repository.CasoResueltoRepository;
+import com.hallado.backend.repository.ValoracionRepository;
 import com.hallado.backend.repository.UserRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +42,8 @@ public class DataSeeder implements CommandLineRunner {
     private final FotoPublicacionRepository fotoPublicacionRepository;
     private final AlertaRepository alertaRepository;
     private final SeguimientoRepository seguimientoRepository;
+    private final CasoResueltoRepository casoResueltoRepository;
+    private final ValoracionRepository valoracionRepository;
 
     public DataSeeder(
             BarrioRepository barrioRepository,
@@ -46,7 +52,9 @@ public class DataSeeder implements CommandLineRunner {
             PublicacionRepository publicacionRepository,
             FotoPublicacionRepository fotoPublicacionRepository,
             AlertaRepository alertaRepository,
-            SeguimientoRepository seguimientoRepository) {
+            SeguimientoRepository seguimientoRepository,
+            CasoResueltoRepository casoResueltoRepository,
+            ValoracionRepository valoracionRepository) {
         this.barrioRepository = barrioRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -54,6 +62,8 @@ public class DataSeeder implements CommandLineRunner {
         this.fotoPublicacionRepository = fotoPublicacionRepository;
         this.alertaRepository = alertaRepository;
         this.seguimientoRepository = seguimientoRepository;
+        this.casoResueltoRepository = casoResueltoRepository;
+        this.valoracionRepository = valoracionRepository;
     }
 
     // Centro aproximado de cada barrio (Punto 5, sección 10.x del plan 5/6): mismas
@@ -161,6 +171,10 @@ public class DataSeeder implements CommandLineRunner {
 
         if (seguimientoRepository.count() == 0) {
             seedSeguimientos();
+        }
+
+        if (casoResueltoRepository.count() == 0) {
+            seedCasosYValoraciones();
         }
     }
 
@@ -359,5 +373,52 @@ public class DataSeeder implements CommandLineRunner {
         }
 
         seguimientoRepository.saveAll(seguimientos);
+    }
+    private void seedCasosYValoraciones() {
+        User demo = userRepository.findById("u-demo").orElse(null);
+        User ana = userRepository.findById("u-2").orElse(null);
+        if (demo == null || ana == null) return;
+
+        List<Publicacion> publicaciones = publicacionRepository.findAll();
+        if (publicaciones.isEmpty()) return;
+
+        Instant ahora = Instant.now();
+
+        // Caso 1: Demo devolvió a Ana (hace 2 días, dentro del plazo de 7 días)
+        Publicacion pub1 = publicaciones.get(0);
+        pub1.setEstado(EstadoPublicacion.RESUELTA);
+        publicacionRepository.save(pub1);
+
+        CasoResuelto caso1 = new CasoResuelto();
+        caso1.setPublicacion(pub1);
+        caso1.setDevolvedor(demo);
+        caso1.setRecuperador(ana);
+        caso1.setFechaResolucion(ahora.minus(Duration.ofDays(2)));
+        casoResueltoRepository.save(caso1);
+
+        // Ana ya valoró a Demo y le dejó un agradecimiento público
+        Valoracion val1 = new Valoracion();
+        val1.setCaso(caso1);
+        val1.setAutor(ana);
+        val1.setDestinatario(demo);
+        val1.setPositiva(true);
+        val1.setComentario("Excelente vecino, me devolvió el objeto intacto y muy rápido.");
+        val1.setAgradecimientoPublico("¡Muchas gracias Demo por tu enorme honestidad y buena predisposición!");
+        val1.setCreadaEn(ahora.minus(Duration.ofDays(2)).plus(Duration.ofHours(3)));
+        valoracionRepository.save(val1);
+
+        // Caso 2: Demo recuperó de Ana (hace 3 días, dentro del plazo de 7 días, sin valorar aún)
+        if (publicaciones.size() > 1) {
+            Publicacion pub2 = publicaciones.get(1);
+            pub2.setEstado(EstadoPublicacion.RESUELTA);
+            publicacionRepository.save(pub2);
+
+            CasoResuelto caso2 = new CasoResuelto();
+            caso2.setPublicacion(pub2);
+            caso2.setDevolvedor(ana);
+            caso2.setRecuperador(demo);
+            caso2.setFechaResolucion(ahora.minus(Duration.ofDays(3)));
+            casoResueltoRepository.save(caso2);
+        }
     }
 }

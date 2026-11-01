@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import AgradecimientosList from '../../components/AgradecimientosList';
 import Avatar from '../../components/Avatar';
 import ErrorText from '../../components/ErrorText';
 import Loading from '../../components/Loading';
@@ -11,7 +12,7 @@ import { getPublicProfile } from '../../services/userService';
 import { formatMemberSince } from '../../utils/formatters';
 
 // Se abre con navigation.navigate('PublicProfile', { userId })
-// Solo muestra reputación, insignias y antigüedad: nunca teléfono ni historial.
+// Solo muestra reputación, insignias, antigüedad y agradecimientos públicos: nunca teléfono ni historial.
 export default function PublicProfileScreen({ route }) {
   const { userId } = route.params;
   const [profile, setProfile] = useState(null);
@@ -42,6 +43,7 @@ export default function PublicProfileScreen({ route }) {
         <Text style={styles.muted}>{formatMemberSince(profile.memberSince)}</Text>
       </View>
       <ReputationSummary reputation={profile.reputation} badges={profile.badges} />
+      <AgradecimientosList userId={userId} />
     </Screen>
   );
 }
