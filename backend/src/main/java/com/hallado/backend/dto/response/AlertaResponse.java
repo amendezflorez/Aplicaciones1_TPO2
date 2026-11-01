@@ -15,5 +15,6 @@ public record AlertaResponse(
         String texto,
         BarrioResponse barrio,
         Instant creadaEn,
-        long novedadesCount) {
+        long novedadesCount,
+        boolean pausada) {
 }

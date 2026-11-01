@@ -125,6 +125,13 @@ export default function BuscadorInicialScreen({ navigation }) {
             <Text style={styles.opcionTexto}>Encontré algo</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.botonExplorar}
+            onPress={() => navigation.navigate('Resultados', { filtros: { tipoBuscado: 'perdido' } })}
+          >
+            <Text style={styles.botonExplorarTexto}>Explorar publicaciones de la comunidad ›</Text>
+          </TouchableOpacity>
+
           {ultimasBusquedas.length > 0 ? (
             <View style={styles.historial}>
               <Text style={styles.historialTitulo}>Últimas búsquedas</Text>
@@ -198,6 +205,21 @@ const styles = StyleSheet.create({
   },
   opciones: {
     gap: spacing.md,
+  },
+  botonExplorar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  botonExplorarTexto: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
   },
   opcionGrande: {
     alignItems: 'center',

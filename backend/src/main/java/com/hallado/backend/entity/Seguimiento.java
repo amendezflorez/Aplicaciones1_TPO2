@@ -2,6 +2,8 @@ package com.hallado.backend.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -35,6 +37,10 @@ public class Seguimiento {
     @Column(nullable = false)
     private Instant creadaEn;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ultimo_estado_visto")
+    private EstadoPublicacion ultimoEstadoVisto;
+
     public String getId() {
         return id;
     }
@@ -65,5 +71,13 @@ public class Seguimiento {
 
     public void setCreadaEn(Instant creadaEn) {
         this.creadaEn = creadaEn;
+    }
+
+    public EstadoPublicacion getUltimoEstadoVisto() {
+        return ultimoEstadoVisto;
+    }
+
+    public void setUltimoEstadoVisto(EstadoPublicacion ultimoEstadoVisto) {
+        this.ultimoEstadoVisto = ultimoEstadoVisto;
     }
 }
