@@ -11,7 +11,7 @@ const ESTADOS = {
   vencido: 'Vencido',
 };
 
-export default function ReclamoCard({ reclamo, recibido, onDecision, busy, sinConexion }) {
+export default function ReclamoCard({ reclamo, recibido, onDecision, onOpenEncuentro, busy, sinConexion }) {
   const persona = recibido
     ? { name: reclamo.autorNombre, photoUrl: reclamo.autorFotoUrl }
     : { name: reclamo.publicadorNombre, photoUrl: reclamo.publicadorFotoUrl };
@@ -67,6 +67,9 @@ export default function ReclamoCard({ reclamo, recibido, onDecision, busy, sinCo
             />
           </View>
         </>
+      ) : null}
+      {reclamo.estado === 'aceptado' ? (
+        <Button title="Coordinar devolución" variant="secondary" onPress={() => onOpenEncuentro(reclamo)} />
       ) : null}
     </View>
   );

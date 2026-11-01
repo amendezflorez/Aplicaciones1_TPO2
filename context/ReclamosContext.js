@@ -1,6 +1,12 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { decidirReclamo, getMisReclamos } from '../services/reclamosService';
+import {
+  aceptarPropuestaEncuentro,
+  decidirReclamo,
+  getEncuentro,
+  getMisReclamos,
+  proponerEncuentro,
+} from '../services/reclamosService';
 import { getErrorMessage } from '../services/errors';
 
 export const ReclamosContext = createContext(null);
@@ -8,6 +14,7 @@ export const ReclamosContext = createContext(null);
 export function ReclamosProvider({ children }) {
   const { status } = useAuth();
   const [reclamos, setReclamos] = useState([]);
+  const [encuentros, setEncuentros] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -31,17 +38,48 @@ export function ReclamosProvider({ children }) {
     await refresh();
   }, [refresh]);
 
+  const guardarEncuentro = useCallback((reclamoId, encuentro) => {
+    setEncuentros((actuales) => ({ ...actuales, [reclamoId]: encuentro }));
+    return encuentro;
+  }, []);
+
+  const cargarEncuentro = useCallback(async (reclamoId) => {
+    const encuentro = await getEncuentro(reclamoId);
+    return guardarEncuentro(reclamoId, encuentro);
+  }, [guardarEncuentro]);
+
+  const proponerUbicacion = useCallback(async (reclamoId, ubicacion) => {
+    const encuentro = await proponerEncuentro(reclamoId, ubicacion);
+    return guardarEncuentro(reclamoId, encuentro);
+  }, [guardarEncuentro]);
+
+  const aceptarUbicacion = useCallback(async (reclamoId, propuestaId) => {
+    const encuentro = await aceptarPropuestaEncuentro(reclamoId, propuestaId);
+    return guardarEncuentro(reclamoId, encuentro);
+  }, [guardarEncuentro]);
+
   useEffect(() => {
     if (status === 'authenticated') refresh();
     else {
       setReclamos([]);
+      setEncuentros({});
       setError('');
     }
   }, [status, refresh]);
 
   const value = useMemo(
-    () => ({ reclamos, loading, error, refresh, decidir }),
-    [reclamos, loading, error, refresh, decidir]
+    () => ({
+      reclamos,
+      encuentros,
+      loading,
+      error,
+      refresh,
+      decidir,
+      cargarEncuentro,
+      proponerUbicacion,
+      aceptarUbicacion,
+    }),
+    [reclamos, encuentros, loading, error, refresh, decidir, cargarEncuentro, proponerUbicacion, aceptarUbicacion]
   );
 
   return <ReclamosContext.Provider value={value}>{children}</ReclamosContext.Provider>;
