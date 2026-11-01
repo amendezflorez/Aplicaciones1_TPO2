@@ -20,7 +20,14 @@ export default function PublicationCard({ publicacion, onPress }) {
           {categoriaLabel} · {publicacion.barrio?.name ?? 'Sin barrio'}
         </Text>
         <Text style={styles.meta}>{formatFechaRelativa(publicacion.fechaSuceso)}</Text>
-        <EstadoChip estado={publicacion.estado} />
+        <View style={styles.estadosRow}>
+          <EstadoChip estado={publicacion.estado} />
+          {publicacion.cambioEstado ? (
+            <View style={styles.badgeNovedad}>
+              <Text style={styles.badgeNovedadText}>⚡ ¡Cambió de estado!</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -53,5 +60,22 @@ const styles = StyleSheet.create({
   meta: {
     fontSize: 13,
     color: colors.textMuted,
+  },
+  estadosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  badgeNovedad: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  badgeNovedadText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
   },
 });

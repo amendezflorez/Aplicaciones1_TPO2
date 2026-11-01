@@ -49,6 +49,9 @@ public class Alerta {
     @Column(nullable = false)
     private Instant ultimaRevision;
 
+    @Column(nullable = false)
+    private boolean pausada = false;
+
     public String getId() {
         return id;
     }
@@ -111,5 +114,13 @@ public class Alerta {
 
     public void setUltimaRevision(Instant ultimaRevision) {
         this.ultimaRevision = ultimaRevision;
+    }
+
+    public boolean isPausada() {
+        return pausada;
+    }
+
+    public void setPausada(boolean pausada) {
+        this.pausada = pausada;
     }
 }

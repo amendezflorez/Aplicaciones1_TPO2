@@ -9,3 +9,9 @@ export const crearAlerta = async (filtros) => (await api.post('/alertas', filtro
 export const getAlertas = async () => (await api.get('/alertas')).data;
 
 export const borrarAlerta = (id) => api.delete(`/alertas/${id}`);
+
+export const pausarAlerta = async (id, pausada) =>
+  (await api.patch(`/alertas/${id}/pausar`, { pausada })).data;
+
+export const revisarAlerta = async (id) =>
+  (await api.post(`/alertas/${id}/revisar`)).data;

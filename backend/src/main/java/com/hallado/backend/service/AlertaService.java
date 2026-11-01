@@ -20,10 +20,12 @@ import java.time.Instant;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 // "Búsqueda guardada". Alta/listado/borrado nomás: las pantallas "Mis alertas" y qué
 // hacer con el indicador de novedad agregado son del Punto 9 (sección 0 del plan).
 @Service
+@Transactional
 public class AlertaService {
 
     private final AlertaRepository alertaRepository;
@@ -83,9 +85,27 @@ public class AlertaService {
         alertaRepository.delete(alerta);
     }
 
+    public AlertaResponse pausar(String userId, String id, Boolean pausada) {
+        Alerta alerta = alertaRepository.findByIdAndUsuarioId(id, userId).orElseThrow(NotFoundException::new);
+        boolean nuevaPausada = (pausada != null) ? pausada : !alerta.isPausada();
+        alerta.setPausada(nuevaPausada);
+        alertaRepository.save(alerta);
+        return toResponse(alerta, contarNovedades(alerta, userId));
+    }
+
+    public AlertaResponse revisar(String userId, String id) {
+        Alerta alerta = alertaRepository.findByIdAndUsuarioId(id, userId).orElseThrow(NotFoundException::new);
+        alerta.setUltimaRevision(Instant.now());
+        alertaRepository.save(alerta);
+        return toResponse(alerta, 0);
+    }
+
     // Mismo criterio que "contarNovedades" del backend Node de Ronda (demo/novedades):
     // las publicaciones propias del usuario nunca cuentan como novedad para sí mismo.
     private long contarNovedades(Alerta alerta, String userId) {
+        if (alerta.isPausada()) {
+            return 0;
+        }
         List<Publicacion> matches = publicacionRepository.buscar(
                 alerta.getTipoBuscado().opuesto(),
                 alerta.getCategoria(),
@@ -107,6 +127,7 @@ public class AlertaService {
                 alerta.getTexto(),
                 BarrioResponse.of(barrio),
                 alerta.getCreadaEn(),
-                novedadesCount);
+                novedadesCount,
+                alerta.isPausada());
     }
 }

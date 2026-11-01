@@ -5,7 +5,7 @@
 // Valor actual: IP de la Wi-Fi de la PC de Mady (ipconfig -> "Adaptador de LAN
 // inalámbrica Wi-Fi" -> IPv4), para probar desde el celular físico vía Expo Go.
 // Si volvés a usar el emulador de Android Studio, cambiar de nuevo a 'http://10.0.2.2:3000/api'.
-export const API_BASE_URL = 'http://192.168.1.21:3000/api';
+export const API_BASE_URL = 'http://192.168.0.20:3000/api';
 
 // true: usa el backend simulado (services/mock/mockAdapter.js), sin servidor real.
 // false (valor actual): usa el backend real (backend/, Spring Boot). Si no está
