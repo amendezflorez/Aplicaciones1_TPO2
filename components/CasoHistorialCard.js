@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors, radius, spacing } from '../config/theme';
-import { formatFechaRelativa } from '../utils/formatters';
+import { formatFechaRelativa } from '../utils/publicacionFormatters';
 import Avatar from './Avatar';
 import Button from './Button';
 

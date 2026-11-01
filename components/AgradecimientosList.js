@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing } from '../config/theme';
 import { getAgradecimientosUsuario } from '../services/historialService';
-import { formatFechaRelativa } from '../utils/formatters';
+import { formatFechaRelativa } from '../utils/publicacionFormatters';
 import Avatar from './Avatar';
 
 export default function AgradecimientosList({ userId }) {
