@@ -6,6 +6,7 @@ import ErrorText from '../../components/ErrorText';
 import OfflineBanner from '../../components/OfflineBanner';
 import PuntoEncuentroCard from '../../components/PuntoEncuentroCard';
 import { colors, radius, spacing } from '../../config/theme';
+import { USE_ENCOUNTER_MOCK } from '../../config/env';
 import { useAuth } from '../../hooks/useAuth';
 import { useConnectivity } from '../../hooks/useConnectivity';
 import { useReclamos } from '../../hooks/useReclamos';
@@ -57,10 +58,11 @@ export default function PuntoEncuentroScreen({ route }) {
   const propuesta = encuentro?.propuestaActual;
   const titularId = reclamo?.tipo === 'lo_encontre' ? reclamo.autorId : reclamo?.publicadorId;
   const esProponente = propuesta?.propuestoPorId === user?.id;
+  const hayPropuestaPendiente = ['pendiente', 'contrapropuesto'].includes(encuentro?.estado);
   const puedeProponer = encuentro?.estado === 'sin_propuesta'
     ? titularId === user?.id
-    : encuentro?.estado === 'pendiente' && !esProponente;
-  const puedeAceptar = encuentro?.estado === 'pendiente' && !esProponente;
+    : hayPropuestaPendiente && !esProponente;
+  const puedeAceptar = hayPropuestaPendiente && !esProponente;
 
   const enviarPropuesta = async () => {
     const direccionLimpia = direccion.trim();
@@ -133,17 +135,22 @@ export default function PuntoEncuentroScreen({ route }) {
         </>
       ) : null}
 
-      {encuentro?.estado === 'pendiente' && propuesta ? (
+      {hayPropuestaPendiente && propuesta ? (
         <>
-          <Text style={styles.sectionTitle}>Propuesta actual</Text>
-          <PuntoEncuentroCard ubicacion={propuesta} />
+          <Text style={styles.sectionTitle}>
+            {encuentro.estado === 'contrapropuesto' ? 'Contrapropuesta actual' : 'Propuesta actual'}
+          </Text>
+          <PuntoEncuentroCard
+            ubicacion={propuesta}
+            titulo={encuentro.estado === 'contrapropuesto' ? 'Punto alternativo' : undefined}
+          />
           {puedeAceptar ? (
             <View style={styles.actions}>
               <Button
                 title="Aceptar este punto"
                 onPress={aceptarPropuesta}
                 loading={guardando}
-                disabled={sinConexion}
+                disabled={sinConexion && !USE_ENCOUNTER_MOCK}
               />
               <Text style={styles.orText}>o sugerí una alternativa</Text>
             </View>
@@ -160,7 +167,7 @@ export default function PuntoEncuentroScreen({ route }) {
       {puedeProponer ? (
         <View style={styles.form}>
           <Text style={styles.sectionTitle}>
-            {encuentro?.estado === 'pendiente' ? 'Punto alternativo' : 'Proponé un punto de encuentro'}
+            {hayPropuestaPendiente ? 'Punto alternativo' : 'Proponé un punto de encuentro'}
           </Text>
           <TextInput
             accessibilityLabel="Dirección o lugar"
@@ -186,7 +193,7 @@ export default function PuntoEncuentroScreen({ route }) {
             title="Enviar propuesta"
             onPress={enviarPropuesta}
             loading={guardando}
-            disabled={sinConexion}
+            disabled={sinConexion && !USE_ENCOUNTER_MOCK}
           />
         </View>
       ) : null}

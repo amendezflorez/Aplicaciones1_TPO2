@@ -12,7 +12,7 @@ import { getErrorMessage } from '../services/errors';
 export const ReclamosContext = createContext(null);
 
 export function ReclamosProvider({ children }) {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const [reclamos, setReclamos] = useState([]);
   const [encuentros, setEncuentros] = useState({});
   const [loading, setLoading] = useState(false);
@@ -44,14 +44,15 @@ export function ReclamosProvider({ children }) {
   }, []);
 
   const cargarEncuentro = useCallback(async (reclamoId) => {
-    const encuentro = await getEncuentro(reclamoId);
+    const reclamo = reclamos.find((item) => item.id === reclamoId);
+    const encuentro = await getEncuentro(reclamoId, user?.id, reclamo?.publicacionTitulo);
     return guardarEncuentro(reclamoId, encuentro);
-  }, [guardarEncuentro]);
+  }, [guardarEncuentro, reclamos, user?.id]);
 
   const proponerUbicacion = useCallback(async (reclamoId, ubicacion) => {
-    const encuentro = await proponerEncuentro(reclamoId, ubicacion);
+    const encuentro = await proponerEncuentro(reclamoId, ubicacion, user?.id);
     return guardarEncuentro(reclamoId, encuentro);
-  }, [guardarEncuentro]);
+  }, [guardarEncuentro, user?.id]);
 
   const aceptarUbicacion = useCallback(async (reclamoId, propuestaId) => {
     const encuentro = await aceptarPropuestaEncuentro(reclamoId, propuestaId);
