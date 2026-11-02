@@ -44,9 +44,10 @@ export function ReclamosProvider({ children }) {
   }, []);
 
   const cargarEncuentro = useCallback(async (reclamoId) => {
-    const encuentro = await getEncuentro(reclamoId, user?.id);
+    const reclamo = reclamos.find((item) => item.id === reclamoId);
+    const encuentro = await getEncuentro(reclamoId, user?.id, reclamo?.publicacionTitulo);
     return guardarEncuentro(reclamoId, encuentro);
-  }, [guardarEncuentro, user?.id]);
+  }, [guardarEncuentro, reclamos, user?.id]);
 
   const proponerUbicacion = useCallback(async (reclamoId, ubicacion) => {
     const encuentro = await proponerEncuentro(reclamoId, ubicacion, user?.id);

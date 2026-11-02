@@ -36,10 +36,10 @@ export const decidirReclamo = async (reclamoId, decision) =>
 // un reclamo aceptado. GET devuelve estado sin_propuesta|pendiente|acordado,
 // propuestaActual y ubicacionAcordada; cada ubicación incluye id, direccion,
 // referencia, latitud, longitud y propuestoPorId cuando esos datos aplican.
-export const getEncuentro = async (reclamoId, usuarioId) =>
+export const getEncuentro = async (reclamoId, usuarioId, publicacionTitulo) =>
   conRespaldoMock(
     async () => (await api.get(`/reclamos/${reclamoId}/encuentro`)).data,
-    () => getEncuentroMock(reclamoId, usuarioId)
+    () => getEncuentroMock(reclamoId, usuarioId, publicacionTitulo)
   );
 
 export const proponerEncuentro = async (reclamoId, ubicacion, usuarioId) =>

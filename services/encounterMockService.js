@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = 'mockEncuentros';
+const TITULO_DEMO_CON_PROPUESTA = 'Perdí una cámara en Recoleta';
 
 async function readEncuentros() {
   try {
@@ -17,9 +18,29 @@ async function saveEncuentro(reclamoId, encuentro) {
   return encuentro;
 }
 
-export async function getEncuentroMock(reclamoId) {
+export async function getEncuentroMock(reclamoId, usuarioId, publicacionTitulo) {
   const encuentros = await readEncuentros();
-  return encuentros[reclamoId] || saveEncuentro(reclamoId, {
+  if (encuentros[reclamoId]) return encuentros[reclamoId];
+
+  if (publicacionTitulo === TITULO_DEMO_CON_PROPUESTA) {
+    return saveEncuentro(reclamoId, {
+      reclamoId,
+      estado: 'pendiente',
+      propuestaActual: {
+        id: 'demo-propuesta-ana',
+        direccion: 'Plaza Vicente Lopez, Recoleta, Buenos Aires',
+        referencia: 'Sobre la calle Parana, junto a la fuente',
+        latitud: -34.5882,
+        longitud: -58.3934,
+        propuestoPorId: 'u-2',
+        creadaEn: new Date().toISOString(),
+        tipo: 'propuesta',
+      },
+      ubicacionAcordada: null,
+    });
+  }
+
+  return saveEncuentro(reclamoId, {
     reclamoId,
     estado: 'sin_propuesta',
     propuestaActual: null,
