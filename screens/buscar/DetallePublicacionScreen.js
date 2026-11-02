@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import Button from '../../components/Button';
 import ErrorText from '../../components/ErrorText';
@@ -14,7 +15,7 @@ import { useConnectivity } from '../../hooks/useConnectivity';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
 import { guardarDetalle, obtenerDetalle as obtenerDetalleCacheado } from '../../services/offline/detallesCache';
 import { getDetallePublicacion } from '../../services/publicacionesService';
-import { dejarDeSeguirPublicacion, seguirPublicacion } from '../../services/seguimientosService';
+import { dejarDeSeguirPublicacion, marcarSeguimientoVisto, seguirPublicacion } from '../../services/seguimientosService';
 import { getPublicProfile } from '../../services/userService';
 import { formatFechaRelativa, formatFranjaHoraria } from '../../utils/publicacionFormatters';
 
@@ -66,6 +67,9 @@ export default function DetallePublicacionScreen({ route, navigation }) {
           if (!vigente) return;
           aplicarDetalle(d, false);
           guardarDetalle(d); // fire-and-forget: no bloquea el render del detalle
+          if (d.siguiendo) {
+            marcarSeguimientoVisto(id).catch(() => {});
+          }
           if (!d.esPropia) {
             getPublicProfile(d.publicador.id)
               .then((p) => vigente && setPublicadorReputacion(p.reputation))
@@ -150,6 +154,28 @@ export default function DetallePublicacionScreen({ route, navigation }) {
         <Text style={styles.titulo}>{detalle.titulo}</Text>
         <EstadoChip estado={detalle.estado} />
       </View>
+
+      {!detalle.esPropia ? (
+        <TouchableOpacity
+          style={[styles.botonSeguirHeader, siguiendo && styles.botonSeguirHeaderActivo]}
+          onPress={toggleSeguir}
+          disabled={sinConexion}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={siguiendo ? 'bookmark' : 'bookmark-outline'}
+            size={18}
+            color={siguiendo ? colors.white : colors.primary}
+          />
+          <Text style={[styles.botonSeguirHeaderText, siguiendo && styles.botonSeguirHeaderTextActivo]}>
+            {siguiendo ? 'Siguiendo esta publicación' : 'Seguir esta publicación'}
+          </Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.esPropiaBadge}>
+          <Text style={styles.esPropiaBadgeText}>Tu publicación</Text>
+        </View>
+      )}
       <Text style={styles.meta}>
         {categoriaLabel} · {detalle.barrio?.name ?? 'Sin barrio'}
       </Text>
@@ -285,5 +311,40 @@ const styles = StyleSheet.create({
   },
   acciones: {
     gap: spacing.sm,
+  },
+  botonSeguirHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: '#F0F9FF',
+  },
+  botonSeguirHeaderActivo: {
+    backgroundColor: colors.primary,
+  },
+  botonSeguirHeaderText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  botonSeguirHeaderTextActivo: {
+    color: colors.white,
+  },
+  esPropiaBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+  },
+  esPropiaBadgeText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontWeight: '600',
   },
 });

@@ -1,4 +1,5 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import HistorialScreen from '../screens/historial/HistorialScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
@@ -20,6 +21,11 @@ export default function ProfileNavigator() {
         name="PublicProfile"
         component={PublicProfileScreen}
         options={{ title: 'Perfil público' }}
+      />
+      <Stack.Screen
+        name="Historial"
+        component={HistorialScreen}
+        options={{ title: 'Historial de casos' }}
       />
     </Stack.Navigator>
   );

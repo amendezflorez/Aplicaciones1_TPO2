@@ -7,3 +7,4 @@ import { api } from './api';
 export const seguirPublicacion = (id) => api.post(`/publicaciones/${id}/seguir`);
 export const dejarDeSeguirPublicacion = (id) => api.delete(`/publicaciones/${id}/seguir`);
 export const getSeguidas = async () => (await api.get('/seguimientos')).data;
+export const marcarSeguimientoVisto = (id) => api.post(`/seguimientos/${id}/visto`);

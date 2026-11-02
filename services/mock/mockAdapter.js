@@ -70,6 +70,178 @@ async function loadDb() {
   } catch {
     db = seedDb();
   }
+  if (!db.alertas) {
+    db.alertas = [
+      {
+        id: 'al-1',
+        usuarioId: 'u-demo',
+        tipoBuscado: 'perdi',
+        categoria: 'mascotas',
+        texto: 'perro caniche',
+        barrio: BARRIOS[0],
+        creadaEn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        ultimaRevision: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        novedadesCount: 2,
+        pausada: false,
+      },
+      {
+        id: 'al-2',
+        usuarioId: 'u-demo',
+        tipoBuscado: 'encontre',
+        categoria: 'documentos',
+        texto: 'dni',
+        barrio: BARRIOS[1],
+        creadaEn: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        ultimaRevision: new Date().toISOString(),
+        novedadesCount: 0,
+        pausada: true,
+      },
+    ];
+  }
+  if (!db.publicaciones) {
+    db.publicaciones = [
+      {
+        id: 'pub-ana-1',
+        publicadorId: 'u-2',
+        tipo: 'encontrado',
+        titulo: 'Llavero con 3 llaves en Plaza Serrano',
+        descripcion: 'Encontré este llavero cerca de Plaza Serrano ayer por la tarde.',
+        categoria: 'llaves',
+        barrio: BARRIOS[0],
+        fechaSuceso: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        franjaHoraria: 'tarde',
+        lat: -34.5875,
+        lng: -58.4205,
+        fotoPrincipalUrl: null,
+        fotos: [],
+        estado: 'abierta',
+        preguntaVerificacion: '¿De qué color es el llavero?',
+      },
+      {
+        id: 'pub-ana-2',
+        publicadorId: 'u-2',
+        tipo: 'perdido',
+        titulo: 'Se escapó mi perro caniche blanco',
+        descripcion: 'Perro caniche toy blanco, responde al nombre de Toby.',
+        categoria: 'mascotas',
+        barrio: BARRIOS[3],
+        fechaSuceso: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        franjaHoraria: 'noche',
+        lat: -34.5875,
+        lng: -58.3974,
+        fotoPrincipalUrl: null,
+        fotos: [],
+        estado: 'abierta',
+        preguntaVerificacion: null,
+      },
+      {
+        id: 'pub-ana-3',
+        publicadorId: 'u-2',
+        tipo: 'perdido',
+        titulo: 'Perdí campera de jean en Parque Centenario',
+        descripcion: 'Campera de jean azul clásica con un pin en la solapa.',
+        categoria: 'ropa',
+        barrio: BARRIOS[2],
+        fechaSuceso: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        franjaHoraria: 'tarde',
+        lat: -34.616,
+        lng: -58.436,
+        fotoPrincipalUrl: null,
+        fotos: [],
+        estado: 'abierta',
+        preguntaVerificacion: null,
+      },
+      {
+        id: 'pub-demo-1',
+        publicadorId: 'u-demo',
+        tipo: 'perdido',
+        titulo: 'Perdí DNI y SUBE en Belgrano',
+        descripcion: 'Estuche transparente con DNI y tarjeta SUBE.',
+        categoria: 'documentos',
+        barrio: BARRIOS[1],
+        fechaSuceso: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        franjaHoraria: 'manana',
+        lat: -34.5633,
+        lng: -58.455,
+        fotoPrincipalUrl: null,
+        fotos: [],
+        estado: 'abierta',
+        preguntaVerificacion: null,
+      },
+    ];
+  }
+  if (!db.casos) {
+    db.casos = [
+      {
+        id: 'caso-1',
+        publicacionId: 'pub-demo-1',
+        publicacionTitulo: 'Perdí DNI y SUBE en Belgrano',
+        publicacionCategoria: 'documentos',
+        publicacionFotoPrincipalUrl: null,
+        devolvedorId: 'u-demo',
+        recuperadorId: 'u-2',
+        fechaResolucion: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'caso-2',
+        publicacionId: 'pub-ana-1',
+        publicacionTitulo: 'Llavero con 3 llaves en Plaza Serrano',
+        publicacionCategoria: 'llaves',
+        publicacionFotoPrincipalUrl: null,
+        devolvedorId: 'u-2',
+        recuperadorId: 'u-demo',
+        fechaResolucion: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+  }
+  if (!db.valoraciones) {
+    db.valoraciones = [
+      {
+        id: 'val-1',
+        casoId: 'caso-1',
+        autorId: 'u-2',
+        destinatarioId: 'u-demo',
+        positiva: true,
+        comentario: 'Excelente vecino, me devolvió todo intacto y a tiempo.',
+        agradecimientoPublico: '¡Muchísimas gracias Demo por tu enorme honestidad y buena onda!',
+        creadaEn: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+  }
+  if (!db.seguimientos) {
+    db.seguimientos = [
+      {
+        id: 'pub-seg-1',
+        usuarioId: 'u-demo',
+        tipo: 'encontre',
+        titulo: 'Mochila negra con billetera',
+        categoria: 'otros',
+        barrio: BARRIOS[0],
+        fechaSuceso: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        lat: -34.588,
+        lng: -58.43,
+        fotoPrincipalUrl: null,
+        estado: 'en_reclamo',
+        ultimoEstadoVisto: 'abierta',
+        cambioEstado: true,
+      },
+      {
+        id: 'pub-seg-2',
+        usuarioId: 'u-demo',
+        tipo: 'perdido',
+        titulo: 'Gato siamés con collar rojo',
+        categoria: 'mascotas',
+        barrio: BARRIOS[2],
+        fechaSuceso: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        lat: -34.618,
+        lng: -58.44,
+        fotoPrincipalUrl: null,
+        estado: 'abierta',
+        ultimoEstadoVisto: 'abierta',
+        cambioEstado: false,
+      },
+    ];
+  }
   return db;
 }
 
@@ -217,6 +389,345 @@ async function route(config) {
     if (!authUser(config)) return respond(401);
     const user = db.users.find((u) => u.id === publicMatch[1]);
     return user ? respond(200, toPublicUser(user)) : respond(404);
+  }
+
+  // ---------- Publicaciones (Puntos 3, 4 y 5) ----------
+  if (url.startsWith('/publicaciones')) {
+    const me = authUser(config);
+    if (!me) return respond(401);
+
+    if (key === 'get /publicaciones/mias') {
+      const mias = (db.publicaciones || []).filter(p => p.publicadorId === me.id);
+      return respond(200, mias);
+    }
+
+    const detalleMatch = url.match(/^\/publicaciones\/([^/]+)$/);
+    if (method === 'get' && detalleMatch && !url.includes('/seguir') && !url.includes('/fotos')) {
+      const p = (db.publicaciones || []).find(item => item.id === detalleMatch[1]);
+      if (!p) return respond(404);
+      const pubUser = db.users.find(u => u.id === p.publicadorId) || { id: p.publicadorId, name: 'Usuario', photoUrl: null, reputation: { returnsCount: 0, positiveCount: 0 } };
+      const siguiendo = (db.seguimientos || []).some(s => s.usuarioId === me.id && s.id === p.id);
+      return respond(200, {
+        ...p,
+        direccionExacta: p.publicadorId === me.id ? 'Dirección privada' : null,
+        latExacta: null,
+        lngExacta: null,
+        publicador: { id: pubUser.id, name: pubUser.name, photoUrl: pubUser.photoUrl, reputation: pubUser.reputation },
+        esPropia: p.publicadorId === me.id,
+        yaReclame: false,
+        siguiendo,
+      });
+    }
+
+    if (method === 'get' && url === '/publicaciones') {
+      const params = config.params || {};
+      const tipoOpuesto =
+        params.tipoBuscado === 'perdi' || params.tipoBuscado === 'perdido'
+          ? 'encontrado'
+          : params.tipoBuscado === 'encontre' || params.tipoBuscado === 'encontrado'
+            ? 'perdido'
+            : null;
+      const filtradas = (db.publicaciones || []).filter(p => {
+        if (tipoOpuesto && p.tipo !== tipoOpuesto) return false;
+        if (params.categoria && p.categoria !== params.categoria) return false;
+        if (params.barrioId && p.barrio?.id !== params.barrioId) return false;
+        return true;
+      });
+      return respond(200, {
+        data: filtradas,
+        page: 0,
+        size: 20,
+        total: filtradas.length,
+      });
+    }
+  }
+
+  // ---------- Alertas (Punto 9) ----------
+  if (url.startsWith('/alertas')) {
+    const me = authUser(config);
+    if (!me) return respond(401);
+
+    if (key === 'get /alertas') {
+      const list = (db.alertas || []).filter((a) => a.usuarioId === me.id);
+      return respond(200, list);
+    }
+
+    if (key === 'post /alertas') {
+      const barrio = body.barrioId ? BARRIOS.find((b) => b.id === body.barrioId) || null : null;
+      const nueva = {
+        id: `al-${Date.now()}`,
+        usuarioId: me.id,
+        tipoBuscado: body.tipoBuscado,
+        categoria: body.categoria || null,
+        texto: body.texto || null,
+        barrio,
+        creadaEn: new Date().toISOString(),
+        ultimaRevision: new Date().toISOString(),
+        novedadesCount: 0,
+        pausada: false,
+      };
+      db.alertas = db.alertas || [];
+      db.alertas.unshift(nueva);
+      await saveDb();
+      return respond(201, nueva);
+    }
+
+    const pausarMatch = url.match(/^\/alertas\/([^/]+)\/pausar$/);
+    if (method === 'patch' && pausarMatch) {
+      const alerta = (db.alertas || []).find((a) => a.id === pausarMatch[1] && a.usuarioId === me.id);
+      if (!alerta) return respond(404);
+      alerta.pausada = body?.pausada !== undefined ? body.pausada : !alerta.pausada;
+      if (alerta.pausada) alerta.novedadesCount = 0;
+      await saveDb();
+      return respond(200, alerta);
+    }
+
+    const revisarMatch = url.match(/^\/alertas\/([^/]+)\/revisar$/);
+    if (method === 'post' && revisarMatch) {
+      const alerta = (db.alertas || []).find((a) => a.id === revisarMatch[1] && a.usuarioId === me.id);
+      if (!alerta) return respond(404);
+      alerta.novedadesCount = 0;
+      alerta.ultimaRevision = new Date().toISOString();
+      await saveDb();
+      return respond(200, alerta);
+    }
+
+    const deleteMatch = url.match(/^\/alertas\/([^/]+)$/);
+    if (method === 'delete' && deleteMatch) {
+      db.alertas = (db.alertas || []).filter((a) => a.id !== deleteMatch[1]);
+      await saveDb();
+      return respond(204);
+    }
+  }
+
+  // ---------- Seguimientos (Punto 9) ----------
+  if (url === '/seguimientos' && method === 'get') {
+    const me = authUser(config);
+    if (!me) return respond(401);
+    const list = (db.seguimientos || []).filter((s) => s.usuarioId === me.id);
+    return respond(200, list);
+  }
+
+  const seguirMatch = url.match(/^\/publicaciones\/([^/]+)\/seguir$/);
+  if (seguirMatch) {
+    const me = authUser(config);
+    if (!me) return respond(401);
+    const pubId = seguirMatch[1];
+    if (method === 'post') {
+      const yaSigue = (db.seguimientos || []).some((s) => s.usuarioId === me.id && s.id === pubId);
+      if (yaSigue) return respond(409);
+      db.seguimientos = db.seguimientos || [];
+      const pub = (db.publicaciones || []).find((p) => p.id === pubId);
+      db.seguimientos.push({
+        id: pubId,
+        usuarioId: me.id,
+        tipo: pub ? pub.tipo : 'perdido',
+        titulo: pub ? pub.titulo : 'Publicación seguida',
+        categoria: pub ? pub.categoria : 'otros',
+        barrio: pub ? pub.barrio : BARRIOS[0],
+        fechaSuceso: pub ? pub.fechaSuceso : new Date().toISOString(),
+        lat: pub ? pub.lat : -34.6,
+        lng: pub ? pub.lng : -58.4,
+        fotoPrincipalUrl: pub ? pub.fotoPrincipalUrl : null,
+        estado: pub ? pub.estado : 'abierta',
+        ultimoEstadoVisto: pub ? pub.estado : 'abierta',
+        cambioEstado: false,
+      });
+      await saveDb();
+      return respond(204);
+    }
+    if (method === 'delete') {
+      db.seguimientos = (db.seguimientos || []).filter((s) => !(s.usuarioId === me.id && s.id === pubId));
+      await saveDb();
+      return respond(204);
+    }
+  }
+
+  // ---------- Historial y Valoraciones (Punto 10) ----------
+  if (url.startsWith('/historial')) {
+    const me = authUser(config);
+    if (!me) return respond(401);
+
+    const casoMatch = url.match(/^\/historial\/([^/]+)$/);
+    if (method === 'get' && casoMatch) {
+      const caso = (db.casos || []).find((c) => c.id === casoMatch[1]);
+      if (!caso) return respond(404);
+      if (caso.devolvedorId !== me.id && caso.recuperadorId !== me.id) return respond(403);
+
+      const esDev = caso.devolvedorId === me.id;
+      const contraId = esDev ? caso.recuperadorId : caso.devolvedorId;
+      const contraUser = db.users.find((u) => u.id === contraId) || { id: contraId, name: 'Usuario', photoUrl: null };
+
+      const miVal = (db.valoraciones || []).find((v) => v.casoId === caso.id && v.autorId === me.id);
+      const recVal = (db.valoraciones || []).find((v) => v.casoId === caso.id && v.autorId === contraId);
+
+      const resolucionMs = new Date(caso.fechaResolucion).getTime();
+      const limiteMs = resolucionMs + 7 * 24 * 60 * 60 * 1000;
+      const ahoraMs = Date.now();
+      const dentroDePlazo = ahoraMs < limiteMs;
+      const diasRestantes = dentroDePlazo ? Math.max(0, Math.ceil((limiteMs - ahoraMs) / (24 * 60 * 60 * 1000))) : 0;
+
+      return respond(200, {
+        id: caso.id,
+        publicacionId: caso.publicacionId,
+        publicacionTitulo: caso.publicacionTitulo,
+        publicacionCategoria: caso.publicacionCategoria,
+        publicacionFotoPrincipalUrl: caso.publicacionFotoPrincipalUrl,
+        tipo: esDev ? 'devolvi' : 'recupere',
+        fechaResolucion: caso.fechaResolucion,
+        contraparte: { id: contraUser.id, name: contraUser.name, photoUrl: contraUser.photoUrl },
+        puedeValorar: !miVal && dentroDePlazo,
+        diasRestantesParaValorar: diasRestantes,
+        miValoracion: miVal || null,
+        valoracionRecibida: recVal || null,
+      });
+    }
+
+    const valorarMatch = url.match(/^\/historial\/([^/]+)\/valorar$/);
+    if (method === 'post' && valorarMatch) {
+      const caso = (db.casos || []).find((c) => c.id === valorarMatch[1]);
+      if (!caso) return respond(404);
+      if (caso.devolvedorId !== me.id && caso.recuperadorId !== me.id) return respond(403);
+
+      const resolucionMs = new Date(caso.fechaResolucion).getTime();
+      if (Date.now() > resolucionMs + 7 * 24 * 60 * 60 * 1000) {
+        return respond(400, { message: 'El plazo de 7 días para valorar ha expirado.' });
+      }
+
+      const yaValoro = (db.valoraciones || []).some((v) => v.casoId === caso.id && v.autorId === me.id);
+      if (yaValoro) return respond(409, { message: 'Ya valoraste este caso.' });
+
+      const esDev = caso.devolvedorId === me.id;
+      const destinatarioId = esDev ? caso.recuperadorId : caso.devolvedorId;
+
+      const nuevaVal = {
+        id: `val-${Date.now()}`,
+        casoId: caso.id,
+        autorId: me.id,
+        destinatarioId,
+        positiva: !!body.positiva,
+        comentario: body.comentario ? String(body.comentario).trim() : null,
+        agradecimientoPublico: !esDev && body.agradecimientoPublico ? String(body.agradecimientoPublico).trim() : null,
+        creadaEn: new Date().toISOString(),
+      };
+
+      db.valoraciones = db.valoraciones || [];
+      db.valoraciones.push(nuevaVal);
+
+      // Actualizar reputación de destinatario
+      const destUser = db.users.find((u) => u.id === destinatarioId);
+      if (destUser && destUser.reputation) {
+        if (nuevaVal.positiva) {
+          destUser.reputation.positiveCount += 1;
+          if (destinatarioId === caso.devolvedorId) {
+            destUser.reputation.returnsCount += 1;
+          }
+        } else {
+          destUser.reputation.negativeCount += 1;
+        }
+        destUser.reputation.score = destUser.reputation.positiveCount - destUser.reputation.negativeCount;
+      }
+
+      await saveDb();
+
+      return respond(200, {
+        id: caso.id,
+        publicacionId: caso.publicacionId,
+        publicacionTitulo: caso.publicacionTitulo,
+        publicacionCategoria: caso.publicacionCategoria,
+        publicacionFotoPrincipalUrl: caso.publicacionFotoPrincipalUrl,
+        tipo: esDev ? 'devolvi' : 'recupere',
+        fechaResolucion: caso.fechaResolucion,
+        contraparte: { id: destinatarioId, name: destUser?.name || 'Usuario', photoUrl: destUser?.photoUrl || null },
+        puedeValorar: false,
+        diasRestantesParaValorar: 0,
+        miValoracion: nuevaVal,
+        valoracionRecibida: (db.valoraciones || []).find((v) => v.casoId === caso.id && v.autorId === destinatarioId) || null,
+      });
+    }
+
+    if (method === 'get' && url === '/historial') {
+      const params = config.params || {};
+      const tipoFiltro = params.tipo;
+
+      const casosMios = (db.casos || []).filter((c) => {
+        const esDev = c.devolvedorId === me.id;
+        const esRec = c.recuperadorId === me.id;
+        if (!esDev && !esRec) return false;
+        if (tipoFiltro === 'devolvi' && !esDev) return false;
+        if (tipoFiltro === 'recupere' && !esRec) return false;
+
+        const fechaMs = new Date(c.fechaResolucion).getTime();
+        if (params.desde && fechaMs < new Date(params.desde).getTime()) return false;
+        if (params.hasta && fechaMs > new Date(params.hasta).getTime()) return false;
+        return true;
+      });
+
+      const ahoraMs = Date.now();
+      const resultado = casosMios.map((caso) => {
+        const esDev = caso.devolvedorId === me.id;
+        const contraId = esDev ? caso.recuperadorId : caso.devolvedorId;
+        const contraUser = db.users.find((u) => u.id === contraId) || { id: contraId, name: 'Usuario', photoUrl: null };
+
+        const miVal = (db.valoraciones || []).find((v) => v.casoId === caso.id && v.autorId === me.id);
+        const recVal = (db.valoraciones || []).find((v) => v.casoId === caso.id && v.autorId === contraId);
+
+        const resolucionMs = new Date(caso.fechaResolucion).getTime();
+        const limiteMs = resolucionMs + 7 * 24 * 60 * 60 * 1000;
+        const dentroDePlazo = ahoraMs < limiteMs;
+        const diasRestantes = dentroDePlazo ? Math.max(0, Math.ceil((limiteMs - ahoraMs) / (24 * 60 * 60 * 1000))) : 0;
+
+        return {
+          id: caso.id,
+          publicacionId: caso.publicacionId,
+          publicacionTitulo: caso.publicacionTitulo,
+          publicacionCategoria: caso.publicacionCategoria,
+          publicacionFotoPrincipalUrl: caso.publicacionFotoPrincipalUrl,
+          tipo: esDev ? 'devolvi' : 'recupere',
+          fechaResolucion: caso.fechaResolucion,
+          contraparte: { id: contraUser.id, name: contraUser.name, photoUrl: contraUser.photoUrl },
+          puedeValorar: !miVal && dentroDePlazo,
+          diasRestantesParaValorar: diasRestantes,
+          miValoracion: miVal || null,
+          valoracionRecibida: recVal || null,
+        };
+      });
+
+      return respond(200, resultado);
+    }
+  }
+
+  const agradecimientosMatch = url.match(/^\/users\/([^/]+)\/agradecimientos$/);
+  if (method === 'get' && agradecimientosMatch) {
+    const targetUserId = agradecimientosMatch[1];
+    const lista = (db.valoraciones || [])
+      .filter((v) => v.destinatarioId === targetUserId && v.agradecimientoPublico)
+      .map((v) => {
+        const autor = db.users.find((u) => u.id === v.autorId) || { name: 'Vecino', photoUrl: null };
+        const caso = (db.casos || []).find((c) => c.id === v.casoId);
+        return {
+          id: v.id,
+          autorNombre: autor.name,
+          autorFotoUrl: autor.photoUrl,
+          objeto: caso?.publicacionTitulo || 'Objeto devuelto',
+          mensaje: v.agradecimientoPublico,
+          fecha: v.creadaEn,
+        };
+      });
+    return respond(200, lista);
+  }
+
+  const vistoMatch = url.match(/^\/seguimientos\/([^/]+)\/visto$/);
+  if (method === 'post' && vistoMatch) {
+    const me = authUser(config);
+    if (!me) return respond(401);
+    const item = (db.seguimientos || []).find((s) => s.usuarioId === me.id && s.id === vistoMatch[1]);
+    if (item) {
+      item.cambioEstado = false;
+      item.ultimoEstadoVisto = item.estado;
+      await saveDb();
+    }
+    return respond(204);
   }
 
   return respond(404);

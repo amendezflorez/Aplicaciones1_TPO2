@@ -11,6 +11,14 @@ import com.hallado.backend.entity.User;
 import com.hallado.backend.repository.BarrioRepository;
 import com.hallado.backend.repository.FotoPublicacionRepository;
 import com.hallado.backend.repository.PublicacionRepository;
+import com.hallado.backend.entity.Alerta;
+import com.hallado.backend.entity.Seguimiento;
+import com.hallado.backend.repository.AlertaRepository;
+import com.hallado.backend.repository.SeguimientoRepository;
+import com.hallado.backend.entity.CasoResuelto;
+import com.hallado.backend.entity.Valoracion;
+import com.hallado.backend.repository.CasoResueltoRepository;
+import com.hallado.backend.repository.ValoracionRepository;
 import com.hallado.backend.repository.UserRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,18 +40,30 @@ public class DataSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final PublicacionRepository publicacionRepository;
     private final FotoPublicacionRepository fotoPublicacionRepository;
+    private final AlertaRepository alertaRepository;
+    private final SeguimientoRepository seguimientoRepository;
+    private final CasoResueltoRepository casoResueltoRepository;
+    private final ValoracionRepository valoracionRepository;
 
     public DataSeeder(
             BarrioRepository barrioRepository,
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             PublicacionRepository publicacionRepository,
-            FotoPublicacionRepository fotoPublicacionRepository) {
+            FotoPublicacionRepository fotoPublicacionRepository,
+            AlertaRepository alertaRepository,
+            SeguimientoRepository seguimientoRepository,
+            CasoResueltoRepository casoResueltoRepository,
+            ValoracionRepository valoracionRepository) {
         this.barrioRepository = barrioRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.publicacionRepository = publicacionRepository;
         this.fotoPublicacionRepository = fotoPublicacionRepository;
+        this.alertaRepository = alertaRepository;
+        this.seguimientoRepository = seguimientoRepository;
+        this.casoResueltoRepository = casoResueltoRepository;
+        this.valoracionRepository = valoracionRepository;
     }
 
     // Centro aproximado de cada barrio (Punto 5, sección 10.x del plan 5/6): mismas
@@ -130,6 +150,31 @@ public class DataSeeder implements CommandLineRunner {
 
         if (publicacionRepository.count() == 0) {
             seedPublicaciones();
+        } else {
+            User ana = userRepository.findById("u-2").orElse(null);
+            if (ana != null) {
+                List<Publicacion> encontradas = publicacionRepository.findAll().stream()
+                        .filter(p -> p.getTipo() == TipoPublicacion.ENCONTRADO && "u-demo".equals(p.getPublicador().getId()))
+                        .toList();
+                for (Publicacion p : encontradas) {
+                    p.setPublicador(ana);
+                }
+                if (!encontradas.isEmpty()) {
+                    publicacionRepository.saveAll(encontradas);
+                }
+            }
+        }
+
+        if (alertaRepository.count() == 0) {
+            seedAlertas();
+        }
+
+        if (seguimientoRepository.count() == 0) {
+            seedSeguimientos();
+        }
+
+        if (casoResueltoRepository.count() == 0) {
+            seedCasosYValoraciones();
         }
     }
 
@@ -165,7 +210,7 @@ public class DataSeeder implements CommandLineRunner {
 
         publicaciones.add(nueva(
                 TipoPublicacion.ENCONTRADO, "Encontré un gato atigrado sin collar", Categoria.MASCOTAS, caballito,
-                -34.6189, -58.4433, ahora.minus(Duration.ofHours(6)), FranjaHoraria.TARDE, demo,
+                -34.6189, -58.4433, ahora.minus(Duration.ofHours(6)), FranjaHoraria.TARDE, ana,
                 "¿Tiene alguna mancha distintiva? ¿De qué color son sus ojos?", "Mancha blanca en el pecho, ojos verdes"));
 
         publicaciones.add(nueva(
@@ -174,7 +219,7 @@ public class DataSeeder implements CommandLineRunner {
 
         publicaciones.add(nueva(
                 TipoPublicacion.ENCONTRADO, "Encontré un celular Samsung en el subte línea D", Categoria.ELECTRONICA,
-                villaUrquiza, -34.5703, -58.4891, ahora.minus(Duration.ofDays(4)), FranjaHoraria.MANANA, demo,
+                villaUrquiza, -34.5703, -58.4891, ahora.minus(Duration.ofDays(4)), FranjaHoraria.MANANA, ana,
                 "¿De qué color es la funda y qué fondo de pantalla tiene?",
                 "Funda negra, fondo de pantalla un paisaje de montaña"));
 
@@ -184,7 +229,7 @@ public class DataSeeder implements CommandLineRunner {
 
         publicaciones.add(nueva(
                 TipoPublicacion.ENCONTRADO, "Encontré una billetera con documentos", Categoria.DOCUMENTOS, almagro,
-                -34.6089, -58.4205, ahora.minus(Duration.ofDays(6)), FranjaHoraria.TARDE, demo,
+                -34.6089, -58.4205, ahora.minus(Duration.ofDays(6)), FranjaHoraria.TARDE, ana,
                 "¿Qué marca es la billetera y cuánto dinero tenía aproximadamente?",
                 "Billetera de cuero negra marca Prune, sin dinero"));
 
@@ -194,7 +239,7 @@ public class DataSeeder implements CommandLineRunner {
 
         publicaciones.add(nueva(
                 TipoPublicacion.ENCONTRADO, "Encontré una bufanda tejida a mano", Categoria.ROPA, flores,
-                -34.6333, -58.4667, ahora.minus(Duration.ofDays(10)), FranjaHoraria.MANANA, demo,
+                -34.6333, -58.4667, ahora.minus(Duration.ofDays(10)), FranjaHoraria.MANANA, ana,
                 "¿De qué colores es la bufanda?", "Rayas gris y bordó"));
 
         publicaciones.add(nueva(
@@ -203,7 +248,7 @@ public class DataSeeder implements CommandLineRunner {
 
         publicaciones.add(nueva(
                 TipoPublicacion.ENCONTRADO, "Encontré un loro suelto en una plaza", Categoria.MASCOTAS, palermo,
-                -34.5850, -58.4230, ahora.minus(Duration.ofDays(15)), FranjaHoraria.MANANA, demo,
+                -34.5850, -58.4230, ahora.minus(Duration.ofDays(15)), FranjaHoraria.MANANA, ana,
                 "¿Qué frases repite el loro?", "Dice 'hola' y silba"));
 
         publicaciones.add(nueva(
@@ -262,5 +307,118 @@ public class DataSeeder implements CommandLineRunner {
         p.setCreadaEn(creadaEn);
         p.setVenceEn(creadaEn.plus(Duration.ofDays(30)));
         return p;
+    }
+    private void seedAlertas() {
+        User demo = userRepository.findById("u-demo").orElse(null);
+        Barrio palermo = barrioRepository.findById("b1").orElse(null);
+        Barrio belgrano = barrioRepository.findById("b2").orElse(null);
+        if (demo == null || palermo == null || belgrano == null) return;
+
+        Instant ahora = Instant.now();
+
+        Alerta al1 = new Alerta();
+        al1.setUsuario(demo);
+        al1.setTipoBuscado(TipoPublicacion.PERDIDO);
+        al1.setCategoria(Categoria.MASCOTAS);
+        al1.setTexto("perro caniche");
+        al1.setBarrio(palermo);
+        al1.setCreadaEn(ahora.minus(Duration.ofDays(3)));
+        al1.setUltimaRevision(ahora.minus(Duration.ofDays(2)));
+        al1.setPausada(false);
+
+        Alerta al2 = new Alerta();
+        al2.setUsuario(demo);
+        al2.setTipoBuscado(TipoPublicacion.ENCONTRADO);
+        al2.setCategoria(Categoria.DOCUMENTOS);
+        al2.setTexto("dni");
+        al2.setBarrio(belgrano);
+        al2.setCreadaEn(ahora.minus(Duration.ofDays(7)));
+        al2.setUltimaRevision(ahora);
+        al2.setPausada(true);
+
+        alertaRepository.saveAll(List.of(al1, al2));
+    }
+
+    private void seedSeguimientos() {
+        User demo = userRepository.findById("u-demo").orElse(null);
+        if (demo == null) return;
+
+        List<Publicacion> ajenas = publicacionRepository.findAll().stream()
+                .filter(p -> !p.getPublicador().getId().equals("u-demo"))
+                .toList();
+        if (ajenas.isEmpty()) return;
+
+        Instant ahora = Instant.now();
+        List<Seguimiento> seguimientos = new ArrayList<>();
+
+        Publicacion p1 = ajenas.get(0);
+        p1.setEstado(EstadoPublicacion.EN_RECLAMO);
+        publicacionRepository.save(p1);
+
+        Seguimiento s1 = new Seguimiento();
+        s1.setUsuario(demo);
+        s1.setPublicacion(p1);
+        s1.setCreadaEn(ahora.minus(Duration.ofDays(1)));
+        s1.setUltimoEstadoVisto(EstadoPublicacion.ABIERTA);
+        seguimientos.add(s1);
+
+        if (ajenas.size() > 1) {
+            Publicacion p2 = ajenas.get(1);
+            Seguimiento s2 = new Seguimiento();
+            s2.setUsuario(demo);
+            s2.setPublicacion(p2);
+            s2.setCreadaEn(ahora.minus(Duration.ofDays(4)));
+            s2.setUltimoEstadoVisto(p2.getEstado());
+            seguimientos.add(s2);
+        }
+
+        seguimientoRepository.saveAll(seguimientos);
+    }
+    private void seedCasosYValoraciones() {
+        User demo = userRepository.findById("u-demo").orElse(null);
+        User ana = userRepository.findById("u-2").orElse(null);
+        if (demo == null || ana == null) return;
+
+        List<Publicacion> publicaciones = publicacionRepository.findAll();
+        if (publicaciones.isEmpty()) return;
+
+        Instant ahora = Instant.now();
+
+        // Caso 1: Demo devolvió a Ana (hace 2 días, dentro del plazo de 7 días)
+        Publicacion pub1 = publicaciones.get(0);
+        pub1.setEstado(EstadoPublicacion.RESUELTA);
+        publicacionRepository.save(pub1);
+
+        CasoResuelto caso1 = new CasoResuelto();
+        caso1.setPublicacion(pub1);
+        caso1.setDevolvedor(demo);
+        caso1.setRecuperador(ana);
+        caso1.setFechaResolucion(ahora.minus(Duration.ofDays(2)));
+        casoResueltoRepository.save(caso1);
+
+        // Ana ya valoró a Demo y le dejó un agradecimiento público
+        Valoracion val1 = new Valoracion();
+        val1.setCaso(caso1);
+        val1.setAutor(ana);
+        val1.setDestinatario(demo);
+        val1.setPositiva(true);
+        val1.setComentario("Excelente vecino, me devolvió el objeto intacto y muy rápido.");
+        val1.setAgradecimientoPublico("¡Muchas gracias Demo por tu enorme honestidad y buena predisposición!");
+        val1.setCreadaEn(ahora.minus(Duration.ofDays(2)).plus(Duration.ofHours(3)));
+        valoracionRepository.save(val1);
+
+        // Caso 2: Demo recuperó de Ana (hace 3 días, dentro del plazo de 7 días, sin valorar aún)
+        if (publicaciones.size() > 1) {
+            Publicacion pub2 = publicaciones.get(1);
+            pub2.setEstado(EstadoPublicacion.RESUELTA);
+            publicacionRepository.save(pub2);
+
+            CasoResuelto caso2 = new CasoResuelto();
+            caso2.setPublicacion(pub2);
+            caso2.setDevolvedor(ana);
+            caso2.setRecuperador(demo);
+            caso2.setFechaResolucion(ahora.minus(Duration.ofDays(3)));
+            casoResueltoRepository.save(caso2);
+        }
     }
 }

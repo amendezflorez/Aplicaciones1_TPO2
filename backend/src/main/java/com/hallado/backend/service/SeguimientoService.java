@@ -1,6 +1,7 @@
 package com.hallado.backend.service;
 
 import com.hallado.backend.dto.response.PublicacionResumenResponse;
+import com.hallado.backend.dto.response.SeguimientoResponse;
 import com.hallado.backend.entity.Publicacion;
 import com.hallado.backend.entity.Seguimiento;
 import com.hallado.backend.entity.User;
@@ -37,6 +38,7 @@ public class SeguimientoService {
 
     // Idempotente por constraint única (usuario_id, publicacion_id): si ya la seguía
     // devuelve 409, que el cliente trata como éxito (sección 3 del plan).
+    @Transactional
     public void seguir(String userId, String publicacionId) {
         if (seguimientoRepository.existsByUsuarioIdAndPublicacionId(userId, publicacionId)) {
             throw new ConflictException("Ya seguías esta publicación.");
@@ -48,6 +50,7 @@ public class SeguimientoService {
         seguimiento.setUsuario(usuario);
         seguimiento.setPublicacion(publicacion);
         seguimiento.setCreadaEn(Instant.now());
+        seguimiento.setUltimoEstadoVisto(publicacion.getEstado());
         seguimientoRepository.save(seguimiento);
     }
 
@@ -56,9 +59,36 @@ public class SeguimientoService {
         seguimientoRepository.deleteByUsuarioIdAndPublicacionId(userId, publicacionId);
     }
 
-    public List<PublicacionResumenResponse> listar(String userId) {
+    @Transactional
+    public void marcarVisto(String userId, String publicacionId) {
+        seguimientoRepository.findByUsuarioIdAndPublicacionId(userId, publicacionId)
+                .ifPresent(s -> {
+                    s.setUltimoEstadoVisto(s.getPublicacion().getEstado());
+                    seguimientoRepository.save(s);
+                });
+    }
+
+    @Transactional(readOnly = true)
+    public List<SeguimientoResponse> listar(String userId) {
         return seguimientoRepository.findByUsuarioIdOrderByCreadaEnDesc(userId).stream()
-                .map(s -> publicacionMapper.toResumen(s.getPublicacion()))
+                .map(s -> {
+                    PublicacionResumenResponse r = publicacionMapper.toResumen(s.getPublicacion());
+                    boolean cambioEstado = s.getUltimoEstadoVisto() != null
+                            && s.getUltimoEstadoVisto() != s.getPublicacion().getEstado();
+                    return new SeguimientoResponse(
+                            r.id(),
+                            r.tipo(),
+                            r.titulo(),
+                            r.categoria(),
+                            r.barrio(),
+                            r.fechaSuceso(),
+                            r.lat(),
+                            r.lng(),
+                            r.fotoPrincipalUrl(),
+                            r.estado(),
+                            s.getUltimoEstadoVisto(),
+                            cambioEstado);
+                })
                 .toList();
     }
 }

@@ -20,3 +20,5 @@ export function formatMemberSince(isoDate) {
   if (Number.isNaN(date.getTime())) return '';
   return `Miembro desde ${MONTHS[date.getUTCMonth()]} de ${date.getUTCFullYear()}`;
 }
+
+export { formatFechaRelativa } from './publicacionFormatters';
