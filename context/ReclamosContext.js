@@ -12,7 +12,7 @@ import { getErrorMessage } from '../services/errors';
 export const ReclamosContext = createContext(null);
 
 export function ReclamosProvider({ children }) {
-  const { status, user } = useAuth();
+  const { status } = useAuth();
   const [reclamos, setReclamos] = useState([]);
   const [encuentros, setEncuentros] = useState({});
   const [loading, setLoading] = useState(false);
@@ -44,15 +44,14 @@ export function ReclamosProvider({ children }) {
   }, []);
 
   const cargarEncuentro = useCallback(async (reclamoId) => {
-    const reclamo = reclamos.find((item) => item.id === reclamoId);
-    const encuentro = await getEncuentro(reclamoId, user?.id, reclamo?.publicacionTitulo);
+    const encuentro = await getEncuentro(reclamoId);
     return guardarEncuentro(reclamoId, encuentro);
-  }, [guardarEncuentro, reclamos, user?.id]);
+  }, [guardarEncuentro]);
 
   const proponerUbicacion = useCallback(async (reclamoId, ubicacion) => {
-    const encuentro = await proponerEncuentro(reclamoId, ubicacion, user?.id);
+    const encuentro = await proponerEncuentro(reclamoId, ubicacion);
     return guardarEncuentro(reclamoId, encuentro);
-  }, [guardarEncuentro, user?.id]);
+  }, [guardarEncuentro]);
 
   const aceptarUbicacion = useCallback(async (reclamoId, propuestaId) => {
     const encuentro = await aceptarPropuestaEncuentro(reclamoId, propuestaId);
@@ -60,12 +59,22 @@ export function ReclamosProvider({ children }) {
   }, [guardarEncuentro]);
 
   useEffect(() => {
-    if (status === 'authenticated') refresh();
-    else {
-      setReclamos([]);
-      setEncuentros({});
-      setError('');
-    }
+    let active = true;
+    const synchronizeSession = async () => {
+      await Promise.resolve();
+      if (!active) return;
+      if (status === 'authenticated') {
+        await refresh();
+      } else {
+        setReclamos([]);
+        setEncuentros({});
+        setError('');
+      }
+    };
+    synchronizeSession();
+    return () => {
+      active = false;
+    };
   }, [status, refresh]);
 
   const value = useMemo(

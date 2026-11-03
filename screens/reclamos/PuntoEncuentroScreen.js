@@ -1,17 +1,21 @@
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Button from '../../components/Button';
 import ErrorText from '../../components/ErrorText';
 import OfflineBanner from '../../components/OfflineBanner';
 import PuntoEncuentroCard from '../../components/PuntoEncuentroCard';
 import { colors, radius, spacing } from '../../config/theme';
-import { USE_ENCOUNTER_MOCK } from '../../config/env';
 import { useAuth } from '../../hooks/useAuth';
 import { useConnectivity } from '../../hooks/useConnectivity';
 import { useReclamos } from '../../hooks/useReclamos';
+import { getErrorMessage } from '../../services/errors';
 
 const INTERVALO_ACTUALIZACION_MS = 15000;
+
+function mensajeDeError(error, overrides) {
+  return error?.response?.data?.message || getErrorMessage(error, overrides);
+}
 
 export default function PuntoEncuentroScreen({ route }) {
   const { reclamoId } = route.params;
@@ -37,8 +41,8 @@ export default function PuntoEncuentroScreen({ route }) {
         try {
           await cargarEncuentro(reclamoId);
           if (activa) setError('');
-        } catch {
-          if (activa) setError('No se pudo cargar el punto de encuentro. Intentá actualizar.');
+        } catch (requestError) {
+          if (activa) setError(mensajeDeError(requestError));
         } finally {
           if (activa) setCargando(false);
         }
@@ -58,7 +62,7 @@ export default function PuntoEncuentroScreen({ route }) {
   const propuesta = encuentro?.propuestaActual;
   const titularId = reclamo?.tipo === 'lo_encontre' ? reclamo.autorId : reclamo?.publicadorId;
   const esProponente = propuesta?.propuestoPorId === user?.id;
-  const hayPropuestaPendiente = ['pendiente', 'contrapropuesto'].includes(encuentro?.estado);
+  const hayPropuestaPendiente = encuentro?.estado === 'pendiente';
   const puedeProponer = encuentro?.estado === 'sin_propuesta'
     ? titularId === user?.id
     : hayPropuestaPendiente && !esProponente;
@@ -79,8 +83,10 @@ export default function PuntoEncuentroScreen({ route }) {
       });
       setDireccion('');
       setReferencia('');
-    } catch {
-      setError('No se pudo enviar la propuesta. Actualizá e intentá nuevamente.');
+    } catch (requestError) {
+      const mensaje = mensajeDeError(requestError);
+      setError(mensaje);
+      Alert.alert('No se pudo enviar la propuesta', mensaje);
     } finally {
       setGuardando(false);
     }
@@ -92,8 +98,12 @@ export default function PuntoEncuentroScreen({ route }) {
     setError('');
     try {
       await aceptarUbicacion(reclamoId, propuesta.id);
-    } catch {
-      setError('La propuesta pudo haber cambiado. Actualizá antes de volver a intentarlo.');
+    } catch (requestError) {
+      const mensaje = mensajeDeError(requestError, {
+        409: 'La propuesta pudo haber cambiado. Actualizá el encuentro e intentá nuevamente.',
+      });
+      setError(mensaje);
+      Alert.alert('No se pudo aceptar la propuesta', mensaje);
     } finally {
       setGuardando(false);
     }
@@ -137,20 +147,15 @@ export default function PuntoEncuentroScreen({ route }) {
 
       {hayPropuestaPendiente && propuesta ? (
         <>
-          <Text style={styles.sectionTitle}>
-            {encuentro.estado === 'contrapropuesto' ? 'Contrapropuesta actual' : 'Propuesta actual'}
-          </Text>
-          <PuntoEncuentroCard
-            ubicacion={propuesta}
-            titulo={encuentro.estado === 'contrapropuesto' ? 'Punto alternativo' : undefined}
-          />
+          <Text style={styles.sectionTitle}>Propuesta actual</Text>
+          <PuntoEncuentroCard ubicacion={propuesta} />
           {puedeAceptar ? (
             <View style={styles.actions}>
               <Button
                 title="Aceptar este punto"
                 onPress={aceptarPropuesta}
                 loading={guardando}
-                disabled={sinConexion && !USE_ENCOUNTER_MOCK}
+                disabled={sinConexion}
               />
               <Text style={styles.orText}>o sugerí una alternativa</Text>
             </View>
@@ -193,7 +198,7 @@ export default function PuntoEncuentroScreen({ route }) {
             title="Enviar propuesta"
             onPress={enviarPropuesta}
             loading={guardando}
-            disabled={sinConexion && !USE_ENCOUNTER_MOCK}
+            disabled={sinConexion}
           />
         </View>
       ) : null}

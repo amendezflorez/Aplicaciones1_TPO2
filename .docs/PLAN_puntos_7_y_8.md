@@ -1,4 +1,4 @@
-# Plan — Puntos 7 y 8 (Reclamos, Verificación y Devolución)
+![alt text]# Plan — Puntos 7 y 8 (Reclamos, Verificación y Devolución)
 
 App **Hallado** (objetos y mascotas perdidas). Este documento reúne el módulo de reclamos integrado con los puntos 3 y 4 y el módulo de devolución/punto de encuentro:
 
@@ -157,7 +157,7 @@ Estados JSON del encuentro, independientes del estado del reclamo:
 - `pendiente`: hay una propuesta y espera respuesta de la otra persona.
 - `acordado`: una persona aceptó la propuesta vigente; `ubicacionAcordada` contiene el lugar final.
 
-Una ubicación usa `{ id, direccion, referencia, latitud, longitud, propuestoPorId, propuestoEn }`. Las propiedades opcionales pueden ser `null`. `GET /reclamos/{id}/encuentro` devuelve `{ reclamoId, estado, propuestaActual, ubicacionAcordada }`. En `POST /reclamos/{id}/encuentro/propuestas`, el cliente envía `{ direccion, referencia?, latitud?, longitud? }`; los campos del autor, fecha e ID se asignan en el servidor. La respuesta de ambos `POST` devuelve el mismo objeto de encuentro actualizado para reemplazar el estado de Context sin una segunda consulta.
+Una ubicación usa `{ id, direccion, referencia, latitud, longitud, propuestoPorId, propuestoEn }`. Las propiedades opcionales pueden ser `null`. `GET /reclamos/{id}/encuentro` devuelve `{ reclamoId, estado, propuestaActual, ubicacionAcordada, historial }`; el historial enumera las propuestas anteriores con estado `PROPUESTA_PENDIENTE`, `ACEPTADO` o `REEMPLAZADO`. En `POST /reclamos/{id}/encuentro/propuestas`, el cliente envía `{ direccion, referencia?, latitud?, longitud? }`; los campos del autor, fecha e ID se asignan en el servidor. La respuesta de ambos `POST` devuelve el mismo objeto de encuentro actualizado para reemplazar el estado de Context sin una segunda consulta.
 
 El backend debe persistir la propuesta vigente asociada al `Reclamo` existente, generar un ID nuevo al recibir una alternativa y registrar quién propuso y cuándo. Aceptar debe verificar que el ID recibido siga siendo el de la propuesta vigente y cambiar el estado a `acordado` de forma atómica. Todas las rutas verifican autenticación, pertenencia al reclamo y estado `aceptado`; intentos inválidos devuelven un error HTTP explicativo (`403` para actor ajeno y `409` para transición o propuesta obsoleta).
 
@@ -197,10 +197,11 @@ No se agregan dependencias. Se usa `Linking` de React Native, React Navigation, 
 - [x] La interfaz contempla propuesta inicial, aceptación, contraoferta y espera de respuesta.
 - [x] El lugar acordado ofrece **Cómo llegar** con esquema geográfico, Google Maps y fallback web.
 - [x] La pantalla refresca el encuentro al enfocarse y durante su uso; las acciones se deshabilitan sin conexión.
-- [ ] Implementar en backend las tres rutas listadas en la sección 3, con persistencia compartida, autorización por participante y validación de roles.
-- [ ] Serializar aceptar/contraofertar para que una propuesta obsoleta no pueda reemplazar un acuerdo ya confirmado.
-- [ ] Agregar pruebas backend para acceso de terceros, reclamo no aceptado, proponente inicial, aceptación propia, contraoferta y concurrencia.
+- [x] Implementar en backend las tres rutas listadas en la sección 3, con persistencia compartida, autorización por participante y validación de roles.
+- [x] Serializar aceptar/contraofertar para que una propuesta obsoleta no pueda reemplazar un acuerdo ya confirmado.
+- [x] Agregar pruebas backend para acceso de terceros, reclamo no aceptado, proponente inicial, aceptación propia y contraoferta.
+- [x] Agregar prueba concurrente de aceptación y contraoferta.
 - [ ] Probar en Android y iOS que `Linking` abra una app de mapas disponible y que el fallback web conserve el destino.
-- [ ] Ejecutar lint y pruebas del backend cuando se complete la API; `USE_MOCK = false` es el modo requerido hasta que el mock incluya este contrato.
+- [x] Ejecutar pruebas del backend y lint focalizado; `USE_MOCK = false` es requerido porque la negociación solo existe en el backend real.
 
-**Estado de integración:** la capa móvil y el contrato del servicio están escritos. Las rutas `/reclamos/{id}/encuentro` y `/reclamos/{id}/encuentro/propuestas...` aún no existen en el backend del repositorio; hasta implementarlas, la UI podrá presentar el error de carga pero no negociar ni sincronizar propuestas en ejecución.
+**Estado de integración:** las rutas `/reclamos/{id}/encuentro` y `/reclamos/{id}/encuentro/propuestas...` persisten y sincronizan la negociación en el backend. La pantalla consulta al enfocarse y cada 15 segundos; no existe un fallback local para propuestas.
