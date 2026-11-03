@@ -20,8 +20,11 @@ import com.hallado.backend.entity.Seguimiento;
 import com.hallado.backend.repository.AlertaRepository;
 import com.hallado.backend.repository.SeguimientoRepository;
 import com.hallado.backend.entity.CasoResuelto;
+import com.hallado.backend.entity.EncuentroPropuesta;
+import com.hallado.backend.entity.EstadoPropuestaEncuentro;
 import com.hallado.backend.entity.Valoracion;
 import com.hallado.backend.repository.CasoResueltoRepository;
+import com.hallado.backend.repository.EncuentroPropuestaRepository;
 import com.hallado.backend.repository.ValoracionRepository;
 import com.hallado.backend.repository.UserRepository;
 import java.time.Duration;
@@ -49,6 +52,7 @@ public class DataSeeder implements CommandLineRunner {
     private final SeguimientoRepository seguimientoRepository;
     private final CasoResueltoRepository casoResueltoRepository;
     private final ValoracionRepository valoracionRepository;
+    private final EncuentroPropuestaRepository encuentroPropuestaRepository;
 
     public DataSeeder(
             BarrioRepository barrioRepository,
@@ -60,7 +64,8 @@ public class DataSeeder implements CommandLineRunner {
             AlertaRepository alertaRepository,
             SeguimientoRepository seguimientoRepository,
             CasoResueltoRepository casoResueltoRepository,
-            ValoracionRepository valoracionRepository) {
+            ValoracionRepository valoracionRepository,
+            EncuentroPropuestaRepository encuentroPropuestaRepository) {
         this.barrioRepository = barrioRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -71,6 +76,7 @@ public class DataSeeder implements CommandLineRunner {
         this.seguimientoRepository = seguimientoRepository;
         this.casoResueltoRepository = casoResueltoRepository;
         this.valoracionRepository = valoracionRepository;
+        this.encuentroPropuestaRepository = encuentroPropuestaRepository;
     }
 
     // Centro aproximado de cada barrio (Punto 5, sección 10.x del plan 5/6): mismas
@@ -186,6 +192,35 @@ public class DataSeeder implements CommandLineRunner {
 
         seedPublicacionesDemoReclamos();
         seedReclamosDemo();
+        seedEncuentroDemo();
+    }
+
+    private void seedEncuentroDemo() {
+        User demo = userRepository.findById("u-demo").orElseThrow();
+        User ana = userRepository.findById("u-2").orElseThrow();
+        Publicacion publicacion = buscarPublicacion("Encontré un paraguas negro en Recoleta", demo.getId());
+        if (publicacion == null) return;
+        Reclamo reclamo = reclamoRepository.findByPublicacionIdAndAutorId(publicacion.getId(), ana.getId()).stream()
+                .filter(item -> item.getEstado() == EstadoReclamo.ACEPTADO)
+                .findFirst()
+                .orElse(null);
+        if (reclamo == null
+                || !encuentroPropuestaRepository.findByReclamoIdOrderByCreadaEnAscIdAsc(reclamo.getId()).isEmpty()) {
+            return;
+        }
+
+        Instant ahora = Instant.now().minus(Duration.ofMinutes(30));
+        EncuentroPropuesta propuesta = new EncuentroPropuesta();
+        propuesta.setReclamo(reclamo);
+        propuesta.setDireccion("Biblioteca Nacional Mariano Moreno, Agüero 2502");
+        propuesta.setReferencia("Entrada principal sobre Av. Las Heras.");
+        propuesta.setLatitud(-34.5845);
+        propuesta.setLongitud(-58.3992);
+        propuesta.setPropuestoPor(demo);
+        propuesta.setEstado(EstadoPropuestaEncuentro.PROPUESTA_PENDIENTE);
+        propuesta.setCreadaEn(ahora);
+        propuesta.setActualizadaEn(ahora);
+        encuentroPropuestaRepository.save(propuesta);
     }
 
     // Puntos 3/4: 12 publicaciones de prueba (mitad perdido/mitad encontrado, variadas en

@@ -5,6 +5,7 @@
 // Códigos de prueba:
 //   - OTP válido: 123456        - OTP expirado: 000000 (responde 410)
 //   - Usuario demo: demo@hallado.com / Demo1234 (5 devoluciones + insignia)
+//   - Reclamos demo: incluye pendientes, rechazados y vencidos.
 // Los datos se guardan en AsyncStorage: sobreviven al reiniciar la app.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AxiosError } from 'axios';
@@ -69,6 +70,10 @@ async function loadDb() {
     db = raw ? JSON.parse(raw) : seedDb();
   } catch {
     db = seedDb();
+  }
+  if (db.encuentros !== undefined) {
+    delete db.encuentros;
+    await AsyncStorage.setItem(DB_KEY, JSON.stringify(db));
   }
   if (!db.alertas) {
     db.alertas = [
@@ -170,6 +175,308 @@ async function loadDb() {
       },
     ];
   }
+  const ahora = Date.now();
+  db.publicaciones = db.publicaciones || [];
+  if (!db.publicaciones.some((publicacion) => publicacion.id === 'pub-mapa-demo')) {
+    db.publicaciones.push({
+      id: 'pub-mapa-demo',
+      publicadorId: 'u-2',
+      tipo: 'encontrado',
+      titulo: 'Encontré una mochila azul en Parque Las Heras',
+      descripcion: 'Mochila azul con un cuaderno universitario adentro.',
+      categoria: 'otros',
+      barrio: BARRIOS[3],
+      fechaSuceso: new Date(ahora - 24 * 60 * 60 * 1000).toISOString(),
+      franjaHoraria: 'tarde',
+      lat: -34.5855,
+      lng: -58.4052,
+      fotoPrincipalUrl: null,
+      fotos: [],
+      estado: 'en_reclamo',
+      preguntaVerificacion: '¿Qué color tiene la mochila?',
+    });
+  }
+  if (!db.publicaciones.some((publicacion) => publicacion.id === 'pub-es-mio-demo')) {
+    db.publicaciones.push({
+      id: 'pub-es-mio-demo',
+      publicadorId: 'u-2',
+      tipo: 'encontrado',
+      titulo: 'Encontré auriculares inalámbricos en San Telmo',
+      descripcion: 'Estuche negro de auriculares encontrado cerca del parque.',
+      categoria: 'electronica',
+      barrio: BARRIOS[7],
+      fechaSuceso: new Date(ahora - 24 * 60 * 60 * 1000).toISOString(),
+      franjaHoraria: 'tarde',
+      lat: -34.621,
+      lng: -58.3731,
+      fotoPrincipalUrl: null,
+      fotos: [],
+      estado: 'abierta',
+      preguntaVerificacion: '¿Qué marca y color tienen los auriculares?',
+    });
+    await saveDb();
+  }
+  if (!db.publicaciones.some((publicacion) => publicacion.id === 'pub-mapa-extra-demo')) {
+    db.publicaciones.push({
+      id: 'pub-mapa-extra-demo',
+      publicadorId: 'u-2',
+      tipo: 'encontrado',
+      titulo: 'Encontré una billetera roja en Plaza Dorrego',
+      descripcion: 'Billetera roja encontrada cerca de la feria de San Telmo.',
+      categoria: 'documentos',
+      barrio: BARRIOS[7],
+      fechaSuceso: new Date(ahora - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      franjaHoraria: 'manana',
+      lat: -34.6218,
+      lng: -58.3736,
+      fotoPrincipalUrl: null,
+      fotos: [],
+      estado: 'en_reclamo',
+      preguntaVerificacion: '¿Qué tarjeta guardabas en la billetera?',
+    });
+    await saveDb();
+  }
+  if (!db.publicaciones.some((publicacion) => publicacion.id === 'pub-reclamo-recibido-mapa-demo')) {
+    db.publicaciones.push({
+      id: 'pub-reclamo-recibido-mapa-demo',
+      publicadorId: 'u-demo',
+      tipo: 'encontrado',
+      titulo: 'Encontré una cámara fotográfica en Recoleta',
+      descripcion: 'Cámara compacta negra encontrada cerca del centro cultural.',
+      categoria: 'electronica',
+      barrio: BARRIOS[3],
+      fechaSuceso: new Date(ahora - 24 * 60 * 60 * 1000).toISOString(),
+      franjaHoraria: 'tarde',
+      lat: -34.5875,
+      lng: -58.3974,
+      fotoPrincipalUrl: null,
+      fotos: [],
+      estado: 'en_reclamo',
+      preguntaVerificacion: '¿Qué marca tiene la cámara?',
+    });
+    await saveDb();
+  }
+  const reclamosDemo = [
+      {
+        id: 'reclamo-recibido-demo',
+        publicacionId: 'pub-demo-1',
+        publicacionTitulo: 'Perdí DNI y SUBE en Belgrano',
+        publicadorId: 'u-demo',
+        publicadorNombre: 'Demo Vecino',
+        publicadorFotoUrl: null,
+        autorId: 'u-2',
+        autorNombre: 'Ana Gómez',
+        autorFotoUrl: null,
+        tipo: 'lo_encontre',
+        respuestaPregunta: null,
+        descripcion: 'Encontré un estuche transparente con una tarjeta SUBE.',
+        fotoUrl: 'https://picsum.photos/seed/hallado-evidencia/640/480',
+        barrioEncontrado: BARRIOS[1],
+        estado: 'pendiente',
+        creadaEn: new Date(ahora - 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 47 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-enviado-demo',
+        publicacionId: 'pub-ana-1',
+        publicacionTitulo: 'Llavero con 3 llaves en Plaza Serrano',
+        publicadorId: 'u-2',
+        publicadorNombre: 'Ana Gómez',
+        publicadorFotoUrl: null,
+        autorId: 'u-demo',
+        autorNombre: 'Demo Vecino',
+        autorFotoUrl: null,
+        tipo: 'es_mio',
+        respuestaPregunta: 'Tiene tres llaves y el llavero es de cuero marrón.',
+        descripcion: 'Lo perdí al salir de la estación.',
+        fotoUrl: null,
+        barrioEncontrado: null,
+        estado: 'pendiente',
+        creadaEn: new Date(ahora - 2 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 46 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-encuentro-demo',
+        publicacionId: 'pub-ana-2',
+        publicacionTitulo: 'Se escapó mi perro caniche blanco',
+        publicadorId: 'u-2',
+        publicadorNombre: 'Ana Gómez',
+        publicadorFotoUrl: null,
+        autorId: 'u-demo',
+        autorNombre: 'Demo Vecino',
+        autorFotoUrl: null,
+        tipo: 'lo_encontre',
+        respuestaPregunta: null,
+        descripcion: 'Lo encontré cerca de Plaza Francia y lo tengo a resguardo.',
+        fotoUrl: 'https://picsum.photos/seed/hallado-perro-encontrado/640/480',
+        barrioEncontrado: BARRIOS[3],
+        estado: 'aceptado',
+        creadaEn: new Date(ahora - 5 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 43 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-recibido-rechazado-demo',
+        publicacionId: 'pub-demo-1',
+        publicacionTitulo: 'Perdí DNI y SUBE en Belgrano',
+        publicadorId: 'u-demo',
+        publicadorNombre: 'Demo Vecino',
+        publicadorFotoUrl: null,
+        autorId: 'u-2',
+        autorNombre: 'Ana Gómez',
+        autorFotoUrl: null,
+        tipo: 'lo_encontre',
+        respuestaPregunta: null,
+        descripcion: 'Vi un estuche parecido junto a la parada del colectivo.',
+        fotoUrl: 'https://picsum.photos/seed/hallado-evidencia-rechazada/640/480',
+        barrioEncontrado: BARRIOS[1],
+        estado: 'rechazado',
+        creadaEn: new Date(ahora - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora - 2 * 24 * 60 * 60 * 1000 + 48 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-recibido-pendiente-extra-demo',
+        publicacionId: 'pub-demo-1',
+        publicacionTitulo: 'Perdí DNI y SUBE en Belgrano',
+        publicadorId: 'u-demo',
+        publicadorNombre: 'Demo Vecino',
+        publicadorFotoUrl: null,
+        autorId: 'u-test',
+        autorNombre: 'Lucía Pérez',
+        autorFotoUrl: null,
+        tipo: 'lo_encontre',
+        respuestaPregunta: null,
+        descripcion: 'Encontré un estuche con documentos cerca de la estación.',
+        fotoUrl: 'https://picsum.photos/seed/hallado-evidencia-pendiente/640/480',
+        barrioEncontrado: BARRIOS[1],
+        estado: 'pendiente',
+        creadaEn: new Date(ahora - 30 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 47.5 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-recibido-vencido-demo',
+        publicacionId: 'pub-demo-1',
+        publicacionTitulo: 'Perdí DNI y SUBE en Belgrano',
+        publicadorId: 'u-demo',
+        publicadorNombre: 'Demo Vecino',
+        publicadorFotoUrl: null,
+        autorId: 'u-2',
+        autorNombre: 'Ana Gómez',
+        autorFotoUrl: null,
+        tipo: 'lo_encontre',
+        respuestaPregunta: null,
+        descripcion: 'Encontré un estuche cerca de la estación Belgrano.',
+        fotoUrl: 'https://picsum.photos/seed/hallado-evidencia-vencida/640/480',
+        barrioEncontrado: BARRIOS[1],
+        estado: 'vencido',
+        creadaEn: new Date(ahora - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-enviado-rechazado-demo',
+        publicacionId: 'pub-ana-1',
+        publicacionTitulo: 'Llavero con 3 llaves en Plaza Serrano',
+        publicadorId: 'u-2',
+        publicadorNombre: 'Ana Gómez',
+        publicadorFotoUrl: null,
+        autorId: 'u-demo',
+        autorNombre: 'Demo Vecino',
+        autorFotoUrl: null,
+        tipo: 'es_mio',
+        respuestaPregunta: 'Tiene tres llaves plateadas y el llavero es marrón.',
+        descripcion: 'Creo que lo perdí cerca de la plaza.',
+        fotoUrl: null,
+        barrioEncontrado: null,
+        estado: 'rechazado',
+        creadaEn: new Date(ahora - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora - 3 * 24 * 60 * 60 * 1000 + 48 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-enviado-vencido-demo',
+        publicacionId: 'pub-ana-1',
+        publicacionTitulo: 'Llavero con 3 llaves en Plaza Serrano',
+        publicadorId: 'u-2',
+        publicadorNombre: 'Ana Gómez',
+        publicadorFotoUrl: null,
+        autorId: 'u-demo',
+        autorNombre: 'Demo Vecino',
+        autorFotoUrl: null,
+        tipo: 'es_mio',
+        respuestaPregunta: 'Un llavero de cuero marrón con tres llaves.',
+        descripcion: 'Dejé mi teléfono para que me contacten.',
+        fotoUrl: null,
+        barrioEncontrado: null,
+        estado: 'vencido',
+        creadaEn: new Date(ahora - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-enviado-mapa-demo',
+        publicacionId: 'pub-mapa-demo',
+        publicacionTitulo: 'Encontré una mochila azul en Parque Las Heras',
+        publicadorId: 'u-2',
+        publicadorNombre: 'Ana Gómez',
+        publicadorFotoUrl: null,
+        autorId: 'u-demo',
+        autorNombre: 'Demo Vecino',
+        autorFotoUrl: null,
+        tipo: 'es_mio',
+        respuestaPregunta: 'La mochila es azul.',
+        descripcion: 'Tiene un cuaderno universitario con mi nombre.',
+        fotoUrl: null,
+        barrioEncontrado: null,
+        estado: 'aceptado',
+        creadaEn: new Date(ahora - 3 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 45 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-enviado-mapa-extra-demo',
+        publicacionId: 'pub-mapa-extra-demo',
+        publicacionTitulo: 'Encontré una billetera roja en Plaza Dorrego',
+        publicadorId: 'u-2',
+        publicadorNombre: 'Ana Gómez',
+        publicadorFotoUrl: null,
+        autorId: 'u-demo',
+        autorNombre: 'Demo Vecino',
+        autorFotoUrl: null,
+        tipo: 'es_mio',
+        respuestaPregunta: 'Guardaba mi tarjeta SUBE.',
+        descripcion: 'La billetera tiene una pequeña marca en una esquina.',
+        fotoUrl: null,
+        barrioEncontrado: null,
+        estado: 'aceptado',
+        creadaEn: new Date(ahora - 90 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 46.5 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'reclamo-recibido-proponer-encuentro-demo',
+        publicacionId: 'pub-reclamo-recibido-mapa-demo',
+        publicacionTitulo: 'Encontré una cámara fotográfica en Recoleta',
+        publicadorId: 'u-demo',
+        publicadorNombre: 'Demo Vecino',
+        publicadorFotoUrl: null,
+        autorId: 'u-2',
+        autorNombre: 'Ana Gómez',
+        autorFotoUrl: null,
+        tipo: 'es_mio',
+        respuestaPregunta: 'La cámara es una Canon.',
+        descripcion: 'Tiene una correa roja que le agregué.',
+        fotoUrl: null,
+        barrioEncontrado: null,
+        estado: 'aceptado',
+        creadaEn: new Date(ahora - 2 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(ahora + 46 * 60 * 60 * 1000).toISOString(),
+      },
+  ];
+  db.reclamos = db.reclamos || [];
+  let agregoReclamoDemo = false;
+  for (const reclamo of reclamosDemo) {
+    if (!db.reclamos.some((existente) => existente.id === reclamo.id)) {
+      db.reclamos.push(reclamo);
+      agregoReclamoDemo = true;
+    }
+  }
+  if (agregoReclamoDemo) await saveDb();
+
   if (!db.casos) {
     db.casos = [
       {
@@ -292,6 +599,21 @@ function authUser(config) {
 
 const normalizeEmail = (email = '') => email.trim().toLowerCase();
 
+function toReclamoResponse(reclamo) {
+const {
+  id,
+  publicacionId,
+  tipo,
+  respuestaPregunta,
+  descripcion,
+  fotoUrl,
+  barrioEncontrado,
+  estado,
+  creadaEn,
+} = reclamo;
+return { id, publicacionId, tipo, respuestaPregunta, descripcion, fotoUrl, barrioEncontrado, estado, creadaEn };
+}
+
 async function route(config) {
   const method = config.method.toLowerCase();
   const url = config.url;
@@ -391,6 +713,44 @@ async function route(config) {
     return user ? respond(200, toPublicUser(user)) : respond(404);
   }
 
+  // ---------- Reclamos y devolución (Puntos 7 y 8) ----------
+  if (url.startsWith('/reclamos')) {
+    const me = authUser(config);
+    if (!me) return respond(401);
+
+    if (key === 'get /reclamos') {
+      const ahora = Date.now();
+      const reclamos = (db.reclamos || []).filter(
+        (reclamo) => reclamo.autorId === me.id || reclamo.publicadorId === me.id
+      );
+      reclamos.forEach((reclamo) => {
+        if (reclamo.estado === 'pendiente' && new Date(reclamo.venceEn).getTime() <= ahora) {
+          reclamo.estado = 'vencido';
+        }
+      });
+      return respond(200, reclamos);
+    }
+
+    if (key === 'post /reclamos/foto') {
+      const part = config.data?._parts?.find(([field]) => field === 'foto');
+      if (!part?.[1]?.uri) return respond(400, { message: 'La foto es obligatoria.' });
+      return respond(200, { photoUrl: part[1].uri });
+    }
+
+    const decisionMatch = url.match(/^\/reclamos\/([^/]+)\/decision$/);
+    if (method === 'patch' && decisionMatch) {
+      const reclamo = (db.reclamos || []).find((item) => item.id === decisionMatch[1]);
+      if (!reclamo) return respond(404);
+      if (reclamo.publicadorId !== me.id) return respond(403);
+      if (reclamo.estado !== 'pendiente') return respond(409);
+      if (body.decision !== 'aceptar' && body.decision !== 'rechazar') return respond(400);
+
+      reclamo.estado = body.decision === 'aceptar' ? 'aceptado' : 'rechazado';
+      await saveDb();
+      return respond(200, toReclamoResponse(reclamo));
+    }
+  }
+
   // ---------- Publicaciones (Puntos 3, 4 y 5) ----------
   if (url.startsWith('/publicaciones')) {
     const me = authUser(config);
@@ -401,12 +761,75 @@ async function route(config) {
       return respond(200, mias);
     }
 
+    const reclamoMatch = url.match(/^\/publicaciones\/([^/]+)\/reclamos(\/mio)?$/);
+    if (reclamoMatch) {
+      const publicacion = (db.publicaciones || []).find((item) => item.id === reclamoMatch[1]);
+      if (!publicacion) return respond(404);
+
+      if (method === 'get' && reclamoMatch[2] === '/mio') {
+        const reclamo = (db.reclamos || []).find(
+          (item) => item.publicacionId === publicacion.id && item.autorId === me.id
+        );
+        return respond(200, reclamo ? toReclamoResponse(reclamo) : null);
+      }
+
+      if (method === 'post' && !reclamoMatch[2]) {
+        if (publicacion.publicadorId === me.id) return respond(400);
+        const tipo = body.tipo;
+        const tipoValido = (publicacion.tipo === 'encontrado' && tipo === 'es_mio')
+          || (publicacion.tipo === 'perdido' && tipo === 'lo_encontre');
+        if (!tipoValido) return respond(400);
+        if (tipo === 'es_mio' && (!publicacion.preguntaVerificacion || !body.respuestaPregunta?.trim())) {
+          return respond(400);
+        }
+        const barrioEncontrado = tipo === 'lo_encontre'
+          ? BARRIOS.find((barrio) => barrio.id === body.barrioId)
+          : null;
+        if (tipo === 'lo_encontre' && (!body.fotoUrl || !barrioEncontrado)) return respond(400);
+
+        db.reclamos = db.reclamos || [];
+        const intentos = db.reclamos.filter(
+          (item) => item.publicacionId === publicacion.id && item.autorId === me.id
+        ).length;
+        if (intentos >= 3) return respond(409);
+        const publicador = db.users.find((user) => user.id === publicacion.publicadorId);
+        const reclamo = {
+          id: `reclamo-${Date.now()}`,
+          publicacionId: publicacion.id,
+          publicacionTitulo: publicacion.titulo,
+          publicadorId: publicacion.publicadorId,
+          publicadorNombre: publicador?.name || 'Usuario',
+          publicadorFotoUrl: publicador?.photoUrl || null,
+          autorId: me.id,
+          autorNombre: me.name,
+          autorFotoUrl: me.photoUrl,
+          tipo,
+          respuestaPregunta: tipo === 'es_mio' ? body.respuestaPregunta.trim() : null,
+          descripcion: typeof body.descripcion === 'string' ? body.descripcion.trim() || null : null,
+          fotoUrl: tipo === 'lo_encontre' ? body.fotoUrl : body.fotoUrl || null,
+          barrioEncontrado,
+          estado: 'pendiente',
+          creadaEn: new Date().toISOString(),
+          venceEn: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+        };
+        db.reclamos.unshift(reclamo);
+        publicacion.estado = 'en_reclamo';
+        await saveDb();
+        return respond(201, toReclamoResponse(reclamo));
+      }
+    }
+
     const detalleMatch = url.match(/^\/publicaciones\/([^/]+)$/);
     if (method === 'get' && detalleMatch && !url.includes('/seguir') && !url.includes('/fotos')) {
       const p = (db.publicaciones || []).find(item => item.id === detalleMatch[1]);
       if (!p) return respond(404);
       const pubUser = db.users.find(u => u.id === p.publicadorId) || { id: p.publicadorId, name: 'Usuario', photoUrl: null, reputation: { returnsCount: 0, positiveCount: 0 } };
       const siguiendo = (db.seguimientos || []).some(s => s.usuarioId === me.id && s.id === p.id);
+      const yaReclame = (db.reclamos || []).some(
+        (reclamo) => reclamo.publicacionId === p.id
+          && reclamo.autorId === me.id
+          && ['pendiente', 'aceptado'].includes(reclamo.estado)
+      );
       return respond(200, {
         ...p,
         direccionExacta: p.publicadorId === me.id ? 'Dirección privada' : null,
@@ -414,7 +837,7 @@ async function route(config) {
         lngExacta: null,
         publicador: { id: pubUser.id, name: pubUser.name, photoUrl: pubUser.photoUrl, reputation: pubUser.reputation },
         esPropia: p.publicadorId === me.id,
-        yaReclame: false,
+        yaReclame,
         siguiendo,
       });
     }
