@@ -12,9 +12,9 @@ La entidad `Reclamo` y el alta desde el detalle de una publicación pertenecen a
 - El Punto 4 inicia el reclamo desde `DetallePublicacionScreen` y provee `preguntaVerificacion` cuando existe. El Punto 7 agrega la bandeja, las decisiones, el límite de intentos y la expiración.
 - El Punto 5 es responsable de crear y gestionar publicaciones. Este módulo consume publicaciones existentes y actualiza su estado a `en_reclamo`, `resuelta` o `abierta` según la actividad de reclamos.
 - La entidad JPA `Reclamo` ya existe en `backend/`; cualquier ampliación debe extenderla, no duplicarla.
-- El Punto 7 no implementa reputación, historial de devoluciones, valoraciones, chat ni notificaciones push. El Punto 8 coordina únicamente el lugar de devolución; no agrega chat ni confirma que el objeto se haya entregado.
+- El Punto 7 no implementa chat ni notificaciones push. El Punto 8 coordina el lugar de devolución y agrega la confirmación de entrega por QR; el backend conserva la fecha de resolución en `CasoResuelto`.
 - La bandeja requiere el backend real (`USE_MOCK = false`). `services/mock/mockAdapter.js` no implementa publicaciones ni endpoints de reclamos.
-- El Punto 8 requiere persistencia y autorización en el backend. La interfaz móvil y sus llamadas de servicio están incorporadas, pero las rutas de encuentro aún deben implementarse en el backend antes de habilitar una negociación funcional entre dispositivos.
+- El Punto 8 requiere persistencia y autorización en el backend. Las rutas de encuentro y confirmación de entrega validan los participantes y las transiciones en el servidor.
 
 ## 1. Alcance técnico (alineado con las clases)
 
@@ -30,7 +30,7 @@ La entidad `Reclamo` y el alta desde el detalle de una publicación pertenecen a
 | Evidencia | `expo-image-picker` para galería/cámara, con `mediaTypes: ['images']` |
 | Backend | Java 21, Spring Boot 4.1, JPA, DTOs `record`, repositorios y controladores existentes |
 
-No se agregan dependencias. Se conservan las reglas de `AGENTS.md`: validar las APIs Expo contra SDK 57 y no editar `ios/` ni `android/` manualmente.
+El escáner usa `expo-camera`, `expo-image-manipulator`, `jsqr` y `jpeg-js`. Se conservan las reglas de `AGENTS.md`: validar las APIs Expo contra SDK 57 y no editar `ios/` ni `android/` manualmente.
 
 ## 2. Estructura de carpetas
 
@@ -76,10 +76,11 @@ Todas las rutas requieren `Authorization: Bearer <JWT>`, excepto las rutas públ
 | GET | `/reclamos/{id}/encuentro` | — | Encuentro del reclamo aceptado: `{ reclamoId, estado, propuestaActual, ubicacionAcordada }`. `estado` es `sin_propuesta`, `pendiente` o `acordado`; las ubicaciones son `null` cuando no aplican. |
 | POST | `/reclamos/{id}/encuentro/propuestas` | `{ direccion, referencia?, latitud?, longitud? }` | Crea una propuesta inicial o alternativa y devuelve el encuentro actualizado. Solo pueden proponer las partes del reclamo y no puede proponer dos veces seguidas la misma persona. |
 | POST | `/reclamos/{id}/encuentro/propuestas/{propuestaId}/aceptar` | — | Acepta la propuesta vigente y devuelve el encuentro con `estado=acordado`. Solo puede aceptar la otra parte. |
+| POST | `/publicaciones/{id}/devolucion/confirmar` | `{ "reclamoId": "..." }` | Confirma la entrega solo si el QR contiene el ID de esa publicación, el reclamo pertenece a ella, está aceptado y quien escanea es la persona que recupera el objeto. Cambia la publicación a `resuelta` y registra `CasoResuelto.fechaResolucion`. |
 
 Las tres rutas nuevas requieren autenticación, que el reclamo esté `aceptado` y que la persona autenticada sea una de sus partes. El backend debe validar los roles y el estado de forma transaccional; el frontend no es autoridad para aceptar una propuesta.
 
-`ReclamoBandejaResponse` contiene `id`, `publicacionId`, `publicacionTitulo`, identidad/nombre/foto del publicador y autor, `tipo`, `respuestaPregunta`, `descripcion`, `fotoUrl`, `barrioEncontrado`, `estado`, `creadaEn` y `venceEn`.
+`ReclamoBandejaResponse` contiene `id`, `publicacionId`, `publicacionTitulo`, identidad/nombre/foto del publicador y autor, `tipo`, `respuestaPregunta`, `descripcion`, `fotoUrl`, `barrioEncontrado`, `estado`, `creadaEn`, `venceEn`, `publicacionEstado` y `fechaResolucion`.
 
 ## 4. Diseño de la solución implementada
 
@@ -113,7 +114,7 @@ Estados JSON: `pendiente`, `aceptado`, `rechazado`, `vencido`.
 
 - Todo reclamo nuevo comienza en `pendiente`.
 - Cada pendiente vence a las 48 horas desde `creadaEn`. Una tarea de Spring revisa los vencimientos cada minuto; las consultas de bandeja y reclamo propio también procesan los pendientes vencidos antes de responder.
-- Aceptar cambia el reclamo a `aceptado` y la publicación a `resuelta`.
+- Aceptar cambia el reclamo a `aceptado`; la publicación permanece `en_reclamo` hasta que quien recupera el objeto confirme la entrega mediante QR, pero no admite nuevos reclamos ni otra aceptación mientras tanto.
 - Rechazar cambia el reclamo a `rechazado`. Si no quedan reclamos pendientes o aceptados en esa publicación, vuelve a `abierta`.
 - Al vencer el último reclamo activo, la publicación también vuelve a `abierta`.
 - Los estados y el límite son responsabilidad del backend; la interfaz no persiste un estado alternativo.
@@ -148,6 +149,9 @@ Estados JSON: `pendiente`, `aceptado`, `rechazado`, `vencido`.
 - La otra persona puede aceptar el punto vigente o enviar una alternativa. Después de cada contraoferta vuelve a decidir la persona que no la envió; nadie puede aceptar su propia propuesta.
 - La dirección es obligatoria; la referencia y las coordenadas son opcionales. Se recomienda coordinar en un lugar público, pero el sistema no valida ni certifica que un lugar sea seguro.
 - El acuerdo solo confirma el punto de encuentro. No marca automáticamente el objeto como devuelto, no modifica la reputación y no crea valoraciones.
+- La entrega se confirma por separado: quien recupera el objeto escanea el QR asociado a la publicación. El contenido es el ID estable de publicación, por lo que también se admite un QR físico impreso con anterioridad; no se crean tokens temporales ni se confía en un QR de sesión.
+- Al confirmar, el servidor valida de forma transaccional el estado de publicación y reclamo, la relación entre ambos y que el usuario autenticado sea el receptor. La publicación pasa a `resuelta`, los otros reclamos activos se cierran y se crea un `CasoResuelto` con ambos participantes y la fecha/hora. Una segunda confirmación se rechaza.
+- La bandeja muestra la confirmación y su fecha a ambas partes al actualizarse (también mediante el refresco periódico existente); no se envía una notificación push.
 
 ### 7.2 Estados y contrato de encuentro
 
@@ -165,6 +169,7 @@ El backend debe persistir la propuesta vigente asociada al `Reclamo` existente, 
 
 - `ReclamoCard` muestra **Coordinar devolución** solo para reclamos aceptados y abre `PuntoEncuentro` pasando `{ reclamoId }` por React Navigation.
 - `PuntoEncuentroScreen` obtiene el reclamo de `ReclamosContext`, consulta el encuentro al tomar foco y vuelve a consultarlo cada 15 segundos para reflejar cambios del otro participante. Las acciones de propuesta y aceptación usan `reclamosService.js` y actualizan el Context con la respuesta del servidor.
+- Para un reclamo aceptado, solo la persona que recupera el objeto ve **Confirmar entrega con QR**. `ConfirmarDevolucionScreen` revisa el permiso de cámara, escanea QR en vivo o permite elegir una imagen; la lectura de la imagen se decodifica localmente antes de enviar el ID al backend.
 - La persona que tiene el objeto ve el formulario de propuesta inicial. La otra persona ve la ubicación propuesta, puede aceptarla o ingresar una alternativa. Quien propuso espera la respuesta de la contraparte.
 - `PuntoEncuentroCard` presenta la dirección acordada y el botón **Cómo llegar**. `Linking.openURL` intenta `geo:0,0?q=...` para la app geográfica predeterminada, `google.navigation:` como alternativa y, por último, Google Maps web con destino y acción de navegación.
 - Si no hay conexión, se muestran los datos ya cargados y se deshabilitan las acciones que requieren servidor. No se guarda una propuesta local que pudiera confundirse con un acuerdo compartido.
@@ -177,8 +182,10 @@ components/
   PuntoEncuentroCard.js                # ubicación acordada y apertura de mapas
 screens/reclamos/
   PuntoEncuentroScreen.js              # consulta, propuesta, contraoferta y aceptación
+  ConfirmarDevolucionScreen.js         # cámara y fallback de lectura desde galería
 services/
   reclamosService.js                   # GET del encuentro y POST de propuesta/aceptación
+  qrImageDecoder.js                    # normalización JPEG y decodificación local del QR
 context/
   ReclamosContext.js                   # estado por reclamo y acciones compartidas
 navigation/
@@ -186,10 +193,12 @@ navigation/
 backend/src/main/java/com/hallado/backend/
   controller/EncuentroController.java # rutas protegidas del encuentro
   service/EncuentroService.java        # autorización, reglas y transiciones
+  service/DevolucionService.java       # autorización y confirmación transaccional
+  controller/DevolucionController.java # POST de confirmación por ID de publicación
   dto/                                 # requests/responses del Punto 8
 ```
 
-No se agregan dependencias. Se usa `Linking` de React Native, React Navigation, Axios y Context existentes. La API y la entidad deben ampliar el dominio de `Reclamo`; no se crea una entidad de reclamo paralela.
+Se agregan `expo-camera` y `expo-image-manipulator` para el escáner y preparación de imágenes, más `jsqr` y `jpeg-js` para decodificar localmente la imagen elegida. Se usa `Linking` de React Native, React Navigation, Axios y Context existentes. La API y la entidad amplían el dominio existente; no se crea una entidad de reclamo paralela.
 
 ### 7.5 Criterios de aceptación y estado
 
@@ -197,10 +206,13 @@ No se agregan dependencias. Se usa `Linking` de React Native, React Navigation, 
 - [x] La interfaz contempla propuesta inicial, aceptación, contraoferta y espera de respuesta.
 - [x] El lugar acordado ofrece **Cómo llegar** con esquema geográfico, Google Maps y fallback web.
 - [x] La pantalla refresca el encuentro al enfocarse y durante su uso; las acciones se deshabilitan sin conexión.
-- [x] Implementar en backend las tres rutas listadas en la sección 3, con persistencia compartida, autorización por participante y validación de roles.
+- [x] Implementar las rutas listadas en la sección 3, con persistencia compartida, autorización por participante y validación de roles.
 - [x] Serializar aceptar/contraofertar para que una propuesta obsoleta no pueda reemplazar un acuerdo ya confirmado.
 - [x] Agregar pruebas backend para acceso de terceros, reclamo no aceptado, proponente inicial, aceptación propia y contraoferta.
 - [x] Agregar prueba concurrente de aceptación y contraoferta.
+- [x] Confirmar la entrega por QR solo para el receptor, registrar fecha y mostrar el resultado a ambas partes.
+- [x] Ofrecer selector de imágenes y acceso a Configuración cuando no se concede el permiso de cámara.
+- [x] Rechazar QR de otra publicación, reclamos no aceptados, receptores no autorizados y entregas ya confirmadas.
 - [ ] Probar en Android y iOS que `Linking` abra una app de mapas disponible y que el fallback web conserve el destino.
 - [x] Ejecutar pruebas del backend y lint focalizado; `USE_MOCK = false` es requerido porque la negociación solo existe en el backend real.
 

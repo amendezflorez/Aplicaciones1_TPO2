@@ -7,6 +7,7 @@ import com.hallado.backend.dto.response.EstadoEncuentro;
 import com.hallado.backend.entity.EncuentroPropuesta;
 import com.hallado.backend.entity.EstadoPropuestaEncuentro;
 import com.hallado.backend.entity.EstadoReclamo;
+import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.Reclamo;
 import com.hallado.backend.entity.TipoReclamo;
 import com.hallado.backend.entity.User;
@@ -132,6 +133,9 @@ public class EncuentroService {
     private void validarAceptado(Reclamo reclamo) {
         if (reclamo.getEstado() != EstadoReclamo.ACEPTADO) {
             throw new ConflictException("El reclamo debe estar aceptado para coordinar un encuentro.");
+        }
+        if (reclamo.getPublicacion().getEstado() != EstadoPublicacion.EN_RECLAMO) {
+            throw new ConflictException("La devolución ya fue confirmada o la publicación no está disponible.");
         }
     }
 

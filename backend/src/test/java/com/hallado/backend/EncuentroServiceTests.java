@@ -92,7 +92,7 @@ class EncuentroServiceTests {
         publicacion.setBarrio(barrio);
         publicacion.setLat(-34.5875);
         publicacion.setLng(-58.4205);
-        publicacion.setEstado(EstadoPublicacion.RESUELTA);
+        publicacion.setEstado(EstadoPublicacion.EN_RECLAMO);
         publicacion.setPublicador(publicador);
         publicacion.setCreadaEn(Instant.now());
         publicacion = publicacionRepository.save(publicacion);

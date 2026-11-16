@@ -29,6 +29,9 @@ export const proponerEncuentro = async (reclamoId, ubicacion) =>
 export const aceptarPropuestaEncuentro = async (reclamoId, propuestaId) =>
   (await api.post(`/reclamos/${reclamoId}/encuentro/propuestas/${propuestaId}/aceptar`)).data;
 
+export const confirmarDevolucion = async (publicacionId, reclamoId) =>
+  (await api.post(`/publicaciones/${publicacionId}/devolucion/confirmar`, { reclamoId })).data;
+
 // Sube la foto que pide "Lo encontré" (mismo patrón de dos pasos que la foto de perfil en
 // userService.uploadPhoto: subir primero, mandar la URL ya resuelta en crearReclamo).
 export async function subirFotoReclamo(uri) {

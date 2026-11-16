@@ -21,6 +21,8 @@ public interface ReclamoRepository extends JpaRepository<Reclamo, String> {
 
     List<Reclamo> findByPublicacionIdAndAutorId(String publicacionId, String autorId);
 
+    List<Reclamo> findByPublicacionIdAndEstado(String publicacionId, EstadoReclamo estado);
+
     List<Reclamo> findByAutorIdOrderByCreadaEnDesc(String autorId);
 
     @Query("SELECT r FROM Reclamo r WHERE r.publicacion.publicador.id = :userId ORDER BY r.creadaEn DESC")

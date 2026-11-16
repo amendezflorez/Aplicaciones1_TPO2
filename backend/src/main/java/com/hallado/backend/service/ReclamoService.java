@@ -15,6 +15,7 @@ import com.hallado.backend.dto.response.BarrioResponse;
 import com.hallado.backend.dto.response.ReclamoBandejaResponse;
 import com.hallado.backend.dto.response.ReclamoResponse;
 import com.hallado.backend.entity.Barrio;
+import com.hallado.backend.entity.CasoResuelto;
 import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.Publicacion;
 import com.hallado.backend.entity.Reclamo;
@@ -26,6 +27,7 @@ import com.hallado.backend.exception.ConflictException;
 import com.hallado.backend.exception.NotFoundException;
 import com.hallado.backend.exception.UnauthorizedException;
 import com.hallado.backend.repository.BarrioRepository;
+import com.hallado.backend.repository.CasoResueltoRepository;
 import com.hallado.backend.repository.PublicacionRepository;
 import com.hallado.backend.repository.ReclamoRepository;
 import com.hallado.backend.repository.UserRepository;
@@ -39,6 +41,7 @@ public class ReclamoService {
     private final ReclamoRepository reclamoRepository;
     private final PublicacionRepository publicacionRepository;
     private final BarrioRepository barrioRepository;
+    private final CasoResueltoRepository casoResueltoRepository;
     private final UserRepository userRepository;
     private final PhotoStorageService photoStorageService;
 
@@ -46,11 +49,13 @@ public class ReclamoService {
             ReclamoRepository reclamoRepository,
             PublicacionRepository publicacionRepository,
             BarrioRepository barrioRepository,
+            CasoResueltoRepository casoResueltoRepository,
             UserRepository userRepository,
             PhotoStorageService photoStorageService) {
         this.reclamoRepository = reclamoRepository;
         this.publicacionRepository = publicacionRepository;
         this.barrioRepository = barrioRepository;
+        this.casoResueltoRepository = casoResueltoRepository;
         this.userRepository = userRepository;
         this.photoStorageService = photoStorageService;
     }
@@ -70,6 +75,10 @@ public class ReclamoService {
         if (publicacion.getEstado() == EstadoPublicacion.RESUELTA
             || publicacion.getEstado() == EstadoPublicacion.VENCIDA) {
             throw new ConflictException("Esta publicación ya no acepta reclamos.");
+        }
+        if (reclamoRepository.existsByPublicacionIdAndEstado(
+                publicacionId, com.hallado.backend.entity.EstadoReclamo.ACEPTADO)) {
+            throw new ConflictException("Esta publicación ya tiene un reclamo aceptado y espera la entrega.");
         }
         if (request.tipo() == null || request.tipo().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "tipo es obligatorio.");
@@ -142,17 +151,33 @@ public class ReclamoService {
     @Transactional
     public List<ReclamoBandejaResponse> listar(String userId) {
         vencerPendientes();
-        return java.util.stream.Stream.concat(
+        List<Reclamo> reclamos = java.util.stream.Stream.concat(
                         reclamoRepository.findByAutorIdOrderByCreadaEnDesc(userId).stream(),
                         reclamoRepository.findRecibidosPorPublicador(userId).stream())
                 .distinct()
-                .map(this::toBandejaResponse)
+                .toList();
+        if (reclamos.isEmpty()) return List.of();
+
+        java.util.Map<String, Instant> fechasResolucion = casoResueltoRepository
+                .findByReclamoIds(reclamos.stream().map(Reclamo::getId).toList())
+                .stream()
+                .filter(caso -> caso.getReclamo() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        caso -> caso.getReclamo().getId(),
+                        CasoResuelto::getFechaResolucion,
+                        (fechaAnterior, fechaPosterior) -> fechaPosterior));
+        return reclamos.stream()
+                .map(reclamo -> toBandejaResponse(reclamo, fechasResolucion.get(reclamo.getId())))
                 .toList();
     }
 
     @Transactional
     public ReclamoResponse decidir(String userId, String reclamoId, String decision) {
         vencerPendientes();
+        Reclamo existente = reclamoRepository.findById(reclamoId).orElseThrow(NotFoundException::new);
+        Publicacion publicacion = publicacionRepository
+                .findByIdForUpdate(existente.getPublicacion().getId())
+                .orElseThrow(NotFoundException::new);
         Reclamo reclamo = reclamoRepository.findByIdForUpdate(reclamoId).orElseThrow(NotFoundException::new);
         if (!reclamo.getPublicacion().getPublicador().getId().equals(userId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Solo el publicador puede responder este reclamo.");
@@ -165,16 +190,20 @@ public class ReclamoService {
         }
 
         boolean aceptado = decision.equalsIgnoreCase("aceptar");
+        if (aceptado && reclamoRepository.existsByPublicacionIdAndEstado(
+                publicacion.getId(), com.hallado.backend.entity.EstadoReclamo.ACEPTADO)) {
+            throw new ConflictException("Ya hay otro reclamo aceptado para esta publicación.");
+        }
         reclamo.setEstado(aceptado
                 ? com.hallado.backend.entity.EstadoReclamo.ACEPTADO
                 : com.hallado.backend.entity.EstadoReclamo.RECHAZADO);
         reclamoRepository.save(reclamo);
         if (aceptado) {
-            Publicacion publicacion = reclamo.getPublicacion();
-            publicacion.setEstado(EstadoPublicacion.RESUELTA);
-            publicacionRepository.save(publicacion);
+            if (publicacion.getEstado() != EstadoPublicacion.EN_RECLAMO) {
+                throw new ConflictException("La publicación ya no está disponible para aceptar reclamos.");
+            }
         } else {
-            reabrirSiNoQuedanReclamosActivos(reclamo.getPublicacion());
+            reabrirSiNoQuedanReclamosActivos(publicacion);
         }
         return toResponse(reclamo);
     }
@@ -234,7 +263,7 @@ public class ReclamoService {
                 reclamo.getCreadaEn());
     }
 
-    private ReclamoBandejaResponse toBandejaResponse(Reclamo reclamo) {
+    private ReclamoBandejaResponse toBandejaResponse(Reclamo reclamo, Instant fechaResolucion) {
         return new ReclamoBandejaResponse(
                 reclamo.getId(),
                 reclamo.getPublicacion().getId(),
@@ -252,6 +281,8 @@ public class ReclamoService {
                 BarrioResponse.of(reclamo.getBarrioEncontrado()),
                 reclamo.getEstado(),
                 reclamo.getCreadaEn(),
-                reclamo.getCreadaEn().plus(PLAZO_RESPUESTA));
+                reclamo.getCreadaEn().plus(PLAZO_RESPUESTA),
+                reclamo.getPublicacion().getEstado(),
+                fechaResolucion);
     }
 }
