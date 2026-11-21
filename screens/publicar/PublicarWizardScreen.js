@@ -577,6 +577,24 @@ export default function PublicarWizardScreen({ route, navigation }) {
     setIndice(Math.max(0, indice - 1));
   };
 
+  // Botón "atrás" de Android (y la flecha del header): como los pasos son estado interno
+  // de UNA pantalla y no pantallas del stack, por defecto salían del wizard entero. Ahora
+  // retroceden un paso, igual que el botón "Atrás"; recién en el primer paso salen de la
+  // pantalla (el borrador queda guardado igual). No intercepta la salida después de
+  // publicar/encolar (navigate a MisPublicaciones no es GO_BACK/POP, y terminadoRef).
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', (e) => {
+        if (terminadoRef.current || indice === 0) return;
+        const accion = e.data.action.type;
+        if (accion !== 'GO_BACK' && accion !== 'POP') return;
+        e.preventDefault();
+        setErrores({});
+        setIndice((actual) => Math.max(0, actual - 1));
+      }),
+    [navigation, indice]
+  );
+
   // Punto 6 (sección 4.4 del plan): sin conexión, el alta no se intenta (o se intenta y
   // falla por red) — la publicación se encola en vez de perderse, y la cola la procesa
   // services/offline/colaProcesador.js cuando vuelva la conexión. construirBorrador() se
