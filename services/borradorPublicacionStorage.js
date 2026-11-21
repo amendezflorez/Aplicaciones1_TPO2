@@ -80,6 +80,52 @@ export async function copiarFotoAlBorrador(uriOrigen, clientRequestId) {
   return destino.uri;
 }
 
+// Al retomar un borrador: verifica que cada foto siga existiendo en disco antes de
+// mostrarla o intentar subirla. Una URI que no existe más (la persona borró datos de la
+// app, o un borrador viejo que guardó la URI de caché de expo-image-picker y el sistema
+// limpió la caché) haría fallar la subida sin respuesta del servidor, y eso se confunde con
+// "sin conexión" (services/errors.js:esErrorDeRed) — quedaría reintentándose para siempre.
+// - Foto ya subida (tiene `url`): se conserva siempre, no hace falta el archivo local.
+// - Existe pero fuera de Paths.document (caché): se copia al directorio del borrador.
+// - No existe: se descarta y se cuenta en `perdidas` para avisarle a la persona.
+export async function restaurarFotosDelBorrador(fotos = [], clientRequestId) {
+  const restauradas = [];
+  let perdidas = 0;
+  for (const foto of fotos) {
+    if (!foto?.uri) {
+      perdidas += 1;
+      continue;
+    }
+    if (foto.url) {
+      restauradas.push(foto);
+      continue;
+    }
+    try {
+      const archivo = new File(foto.uri);
+      if (!archivo.exists) {
+        perdidas += 1;
+        continue;
+      }
+      if (foto.uri.startsWith(Paths.document.uri)) {
+        restauradas.push(foto);
+      } else {
+        restauradas.push({ ...foto, uri: await copiarFotoAlBorrador(foto.uri, clientRequestId) });
+      }
+    } catch {
+      perdidas += 1;
+    }
+  }
+  return { fotos: restauradas, perdidas };
+}
+
+export function existeArchivo(uri) {
+  try {
+    return Boolean(uri) && new File(uri).exists;
+  } catch {
+    return false;
+  }
+}
+
 // Al eliminar una foto del wizard (botón "✕" en el paso de fotos) borramos también su
 // archivo persistido, para no dejar basura acumulándose en el directorio entre ediciones.
 export function eliminarArchivoBorrador(uri) {

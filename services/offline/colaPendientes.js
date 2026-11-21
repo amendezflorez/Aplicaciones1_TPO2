@@ -42,12 +42,14 @@ export async function obtenerItem(userId, clientRequestId) {
   return cola.find((item) => item.clientRequestId === clientRequestId) ?? null;
 }
 
-async function guardarCola(userId, cola) {
+// `lanzar`: por defecto best-effort (silencioso), igual que el resto del almacenamiento
+// offline. agregarACola pide lanzar=true porque ahí un fallo silencioso perdía la
+// publicación: se borraba el borrador creyendo que ya estaba a salvo en la cola.
+async function guardarCola(userId, cola, { lanzar = false } = {}) {
   try {
     await AsyncStorage.setItem(claveColaDe(userId), JSON.stringify(cola));
-  } catch {
-    // Best-effort, igual que el resto del almacenamiento offline: si falla, la cola sigue
-    // andando en memoria hasta el próximo guardado exitoso.
+  } catch (e) {
+    if (lanzar) throw e;
   }
 }
 
@@ -100,7 +102,15 @@ export async function agregarACola(userId, borrador) {
     creadaEn: Date.now(),
   };
   const cola = await listarCola(userId);
-  await guardarCola(userId, [...cola, item]);
+  try {
+    await guardarCola(userId, [...cola, item], { lanzar: true });
+  } catch (e) {
+    // No quedó en la cola: las fotos vuelven a la carpeta del borrador (mismos nombres de
+    // archivo, así que las URIs del borrador guardado siguen siendo válidas) y NO se
+    // borra el borrador. El wizard muestra el error y la persona puede reintentar.
+    await trasladarFotos(borrador.clientRequestId, CARPETA_COLA, CARPETA_BORRADOR, fotos);
+    throw e;
+  }
   // Borra solo el registro del borrador en AsyncStorage: el directorio de fotos ya se
   // trasladó (o, si falló todo, sigue intacto y en uso por este mismo ítem) — nunca hay
   // que borrarlo acá.
@@ -132,6 +142,17 @@ export async function quitarDeCola(userId, clientRequestId) {
   }
   const borrador = await cargarBorrador(userId);
   if (borrador?.clientRequestId === clientRequestId) await borrarRegistroBorrador(userId);
+}
+
+// "Reintentar" desde Mis publicaciones (un ítem en estado 'error'): vuelve a 'pendiente'
+// con el contador de reintentos en cero, para que el procesador lo mande de nuevo.
+export async function reintentarItem(userId, clientRequestId) {
+  await actualizarItem(userId, clientRequestId, {
+    estado: 'pendiente',
+    mensajeError: null,
+    intentos: 0,
+    proximoIntentoEn: null,
+  });
 }
 
 // "Descartar" desde Mis publicaciones (un ítem en estado 'error'): mismo efecto que

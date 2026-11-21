@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, Image, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -21,11 +21,13 @@ import {
   cargarBorrador,
   copiarFotoAlBorrador,
   eliminarArchivoBorrador,
+  existeArchivo,
   guardarBorrador,
+  restaurarFotosDelBorrador,
 } from '../../services/borradorPublicacionStorage';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
 import { agregarACola, obtenerItem } from '../../services/offline/colaPendientes';
-import { enviarPublicacion } from '../../services/publicarPublicacion';
+import { enviarPublicacion, FOTO_FALTANTE } from '../../services/publicarPublicacion';
 import { getBarrios } from '../../services/userService';
 import { formatDireccionGeocodificada } from '../../utils/publicacionFormatters';
 import { conTimeout } from '../../utils/promesaConTimeout';
@@ -36,6 +38,16 @@ const PICKER_OPTIONS_FOTO = { mediaTypes: ['images'], quality: 0.7 };
 // usa el mismo tipo de proveedor del sistema y puede quedar colgado en el mismo emulador
 // sin Google Play Services.
 const TIMEOUT_GEOCODING_MS = 8000;
+// Largos máximos: los mismos que valida el backend (PublicacionService.crear), que a su vez
+// respetan el tamaño de las columnas en la base. Sin esto, un título de más de 255
+// caracteres llegaba a la base y el backend respondía 500 en vez de un error claro.
+const MAX_LARGO = {
+  titulo: 120,
+  descripcion: 2000,
+  direccionExacta: 255,
+  preguntaVerificacion: 200,
+  respuestaVerificacion: 100,
+};
 const ETIQUETAS_PASO = {
   tipo: '¿Qué querés publicar?',
   fotos: 'Fotos',
@@ -58,6 +70,65 @@ const ETIQUETAS_CAMPOS = {
   pregunta: 'la pregunta de verificación',
   respuesta: 'la respuesta de verificación',
 };
+
+// Lista de pasos según el tipo: "Verificación" solo existe si tipo=encontrado (la
+// pregunta/respuesta están prohibidas para tipo=perdido en el backend). Fuera del
+// componente para poder usarla también al restaurar un borrador, antes de que el estado
+// de React tenga los datos cargados.
+const pasosPara = (tipo) => {
+  const base = ['tipo', 'fotos', 'detalles', 'ubicacion'];
+  if (tipo === 'encontrado') base.push('verificacion');
+  base.push('resumen');
+  return base;
+};
+
+// Validación pura de un paso a partir de los datos (no del estado de React): la usa el
+// render (habilitar "Siguiente"), el botón "Siguiente" y la restauración del borrador
+// (para no dejar a la persona en un paso posterior a uno que quedó incompleto, p. ej. si
+// se perdió una foto). `d.fechaSuceso` es un Date.
+function erroresDe(p, d) {
+  const found = {};
+  if (p === 'tipo' && !d.tipo) {
+    found.tipo = 'Elegí qué querés publicar.';
+  }
+  if (p === 'fotos' && d.fotos.length === 0) {
+    found.fotos = 'Agregá al menos una foto.';
+  }
+  if (p === 'detalles') {
+    if (!d.titulo.trim()) found.titulo = 'El título es obligatorio.';
+    if (!d.descripcion.trim()) found.descripcion = 'La descripción es obligatoria.';
+    if (!d.categoria) found.categoria = 'Elegí una categoría.';
+    if (d.fechaSuceso > new Date()) found.fecha = 'La fecha no puede ser futura.';
+  }
+  if (p === 'ubicacion') {
+    if (!d.barrioId) found.barrio = 'Elegí el barrio.';
+    // "ya sea escribiéndola o tomando la ubicación actual" (consigna del TP): alcanza
+    // con una de las dos, no hace falta exigir las dos.
+    const tieneDireccion = Boolean(d.direccionExacta.trim());
+    const tieneCoordenadas = d.latExacta != null && d.lngExacta != null;
+    if (!tieneDireccion && !tieneCoordenadas) {
+      found.ubicacion = 'Escribí la dirección exacta o usá tu ubicación actual.';
+    }
+  }
+  if (p === 'verificacion') {
+    if (!d.preguntaVerificacion.trim()) found.pregunta = 'Cargá una pregunta de verificación.';
+    if (!d.respuestaVerificacion.trim()) found.respuesta = 'Cargá la respuesta correcta.';
+  }
+  return found;
+}
+
+// Índice del paso donde retomar un borrador: el paso guardado (`guardado.paso`, por
+// NOMBRE y no por número, porque la cantidad de pasos cambia según el tipo), salvo que un
+// paso anterior haya quedado incompleto — ahí se frena en el primero incompleto. Un
+// borrador viejo (de antes de guardar el paso) o con un paso que ya no existe para ese
+// tipo cae directo en el primer paso incompleto: nunca rompe, en el peor caso es el 0.
+function indiceParaRetomar(pasoGuardado, datos) {
+  const pasos = pasosPara(datos.tipo);
+  const primerIncompleto = pasos.findIndex((p) => Object.keys(erroresDe(p, datos)).length > 0);
+  const tope = primerIncompleto === -1 ? pasos.length - 1 : primerIncompleto;
+  const guardado = pasos.indexOf(pasoGuardado);
+  return guardado === -1 ? tope : Math.min(guardado, tope);
+}
 
 // Wizard de carga guiada del Punto 5 (sección 4 de PLAN_puntos_5_y_6.md). Una sola
 // pantalla con pasos internos vía useState, mismo espíritu que BuscadorInicialScreen (acá
@@ -103,14 +174,10 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // escribir el borrador después — si no, reaparece como "Publicación sin terminar" con el
   // mismo clientRequestId del ítem encolado, y descartarlo borraría sus fotos.
   const terminadoRef = useRef(false);
+  const enviandoRef = useRef(false); // candado contra doble envío, ver publicar()
   const [errorEnvio, setErrorEnvio] = useState('');
 
-  const pasos = useMemo(() => {
-    const base = ['tipo', 'fotos', 'detalles', 'ubicacion'];
-    if (tipo === 'encontrado') base.push('verificacion');
-    base.push('resumen');
-    return base;
-  }, [tipo]);
+  const pasos = useMemo(() => pasosPara(tipo), [tipo]);
   const paso = pasos[Math.min(indice, pasos.length - 1)];
 
   useEffect(() => {
@@ -132,28 +199,79 @@ export default function PublicarWizardScreen({ route, navigation }) {
       if (params.barrioId) setBarrioId(params.barrioId);
       setClientRequestId(generarIdLocal());
     };
-    const aplicarBorrador = (guardado) => {
-      setTipo(guardado.tipo ?? null);
-      setFotos(guardado.fotos ?? []);
-      setTitulo(guardado.titulo ?? '');
-      setDescripcion(guardado.descripcion ?? '');
-      setCategoria(guardado.categoria ?? null);
-      setFechaSuceso(guardado.fechaSuceso ? new Date(guardado.fechaSuceso) : new Date());
-      setFranjaHoraria(guardado.franjaHoraria ?? null);
-      setBarrioId(guardado.barrioId ?? null);
-      setDireccionExacta(guardado.direccionExacta ?? '');
-      setLatExacta(guardado.latExacta ?? null);
-      setLngExacta(guardado.lngExacta ?? null);
-      setPreguntaVerificacion(guardado.preguntaVerificacion ?? '');
-      setRespuestaVerificacion(guardado.respuestaVerificacion ?? '');
+    // Restaura TODO el estado del borrador, incluido el paso donde había quedado. Antes el
+    // paso no se guardaba y "Retomar" siempre volvía al paso 1 (perdí/encontré) con los
+    // datos cargados: la consigna pide retomarlo donde se dejó.
+    const aplicarBorrador = async (guardado) => {
       // Reusa el mismo clientRequestId del borrador: si ese intento ya había llegado a
       // crear la publicación en el backend pero la respuesta no volvió, publicar de
       // nuevo con el mismo id no duplica (sección 4.1 del plan).
-      setClientRequestId(guardado.clientRequestId ?? generarIdLocal());
+      const idRestaurado = guardado.clientRequestId ?? generarIdLocal();
+      const { fotos: fotosRestauradas, perdidas } = await restaurarFotosDelBorrador(guardado.fotos, idRestaurado);
+      const fecha = guardado.fechaSuceso ? new Date(guardado.fechaSuceso) : new Date();
+      const datos = {
+        tipo: guardado.tipo ?? null,
+        fotos: fotosRestauradas,
+        titulo: guardado.titulo ?? '',
+        descripcion: guardado.descripcion ?? '',
+        categoria: guardado.categoria ?? null,
+        // Una fecha corrupta en el JSON daría "Invalid Date" y rompería toISOString().
+        fechaSuceso: Number.isNaN(fecha.getTime()) ? new Date() : fecha,
+        franjaHoraria: guardado.franjaHoraria ?? null,
+        barrioId: guardado.barrioId ?? null,
+        direccionExacta: guardado.direccionExacta ?? '',
+        latExacta: guardado.latExacta ?? null,
+        lngExacta: guardado.lngExacta ?? null,
+        preguntaVerificacion: guardado.preguntaVerificacion ?? '',
+        respuestaVerificacion: guardado.respuestaVerificacion ?? '',
+      };
+      if (!vigente) return;
+      setTipo(datos.tipo);
+      setFotos(datos.fotos);
+      setTitulo(datos.titulo);
+      setDescripcion(datos.descripcion);
+      setCategoria(datos.categoria);
+      setFechaSuceso(datos.fechaSuceso);
+      setFranjaHoraria(datos.franjaHoraria);
+      setBarrioId(datos.barrioId);
+      setDireccionExacta(datos.direccionExacta);
+      setLatExacta(datos.latExacta);
+      setLngExacta(datos.lngExacta);
+      setPreguntaVerificacion(datos.preguntaVerificacion);
+      setRespuestaVerificacion(datos.respuestaVerificacion);
+      setClientRequestId(idRestaurado);
+      setIndice(indiceParaRetomar(guardado.paso, datos));
+      if (perdidas > 0) {
+        Alert.alert(
+          'Faltan fotos',
+          perdidas === 1
+            ? 'Una de las fotos del borrador ya no está disponible en el dispositivo. Volvé a agregarla.'
+            : `${perdidas} fotos del borrador ya no están disponibles en el dispositivo. Volvé a agregarlas.`
+        );
+      }
+    };
+
+    const retomar = async (guardado) => {
+      try {
+        await aplicarBorrador(guardado);
+      } catch (e) {
+        // Nunca dejar la pantalla colgada en <Loading />: si algo del borrador no se pudo
+        // restaurar, se arranca de cero con el prefill.
+        console.warn('No se pudo restaurar el borrador', e);
+        if (vigente) iniciarDesdeParams();
+      }
+      if (vigente) setListo(true);
     };
 
     cargarBorrador(user.id).then((guardado) => {
       if (!vigente) return;
+      // "Editar" desde Mis publicaciones (ítem de la cola con error) llega con
+      // retomar:true: la persona ya eligió editar esa publicación, así que se abre directo
+      // en vez de preguntarle "¿Retomar o descartar?" (Descartar ahí era confuso).
+      if (guardado && route.params?.retomar) {
+        retomar(guardado);
+        return;
+      }
       if (guardado) {
         Alert.alert(
           'Publicación sin terminar',
@@ -181,10 +299,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
             },
             {
               text: 'Retomar',
-              onPress: () => {
-                aplicarBorrador(guardado);
-                setListo(true);
-              },
+              onPress: () => retomar(guardado),
             },
           ],
           { cancelable: false }
@@ -204,6 +319,9 @@ export default function PublicarWizardScreen({ route, navigation }) {
   }, []);
 
   const construirBorrador = () => ({
+    // Por nombre ('detalles', 'ubicacion'...), no por número: la cantidad de pasos cambia
+    // según el tipo (ver pasosPara), así que el índice solo no alcanza para ubicarse.
+    paso,
     tipo,
     fotos,
     titulo: titulo.trim(),
@@ -225,15 +343,29 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // tipeada en título/descripción. No corre hasta que `listo` (ya se resolvió si había que
   // retomar/descartar), para no pisar un borrador existente con el estado inicial vacío
   // mientras todavía se está preguntando.
+  //
+  // guardarAhoraRef siempre apunta a una función con el estado del ÚLTIMO render, para
+  // poder llamarla desde listeners que se registran una sola vez (AppState, desmontaje).
+  // No guarda un wizard "vacío" (todavía en el paso 1 y sin fotos): si no, con solo abrir
+  // y cerrar el wizard aparecía después el aviso "Publicación sin terminar".
+  const guardarAhoraRef = useRef(() => {});
+  // Efecto sin dependencias = corre después de cada render (React no permite escribir una
+  // ref durante el render mismo).
+  useEffect(() => {
+    guardarAhoraRef.current = () => {
+      if (!listo || terminadoRef.current || !clientRequestId) return;
+      if (indice === 0 && fotos.length === 0) return;
+      guardarBorrador(user.id, construirBorrador());
+    };
+  });
+
   useEffect(() => {
     if (!listo) return undefined;
-    const id = setTimeout(() => {
-      if (!terminadoRef.current) guardarBorrador(user.id, construirBorrador());
-    }, 600);
+    const id = setTimeout(() => guardarAhoraRef.current(), 600);
     return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     listo,
+    paso, // cambiar de paso también es progreso a guardar (antes no disparaba guardado)
     tipo,
     fotos,
     titulo,
@@ -248,6 +380,19 @@ export default function PublicarWizardScreen({ route, navigation }) {
     preguntaVerificacion,
     respuestaVerificacion,
   ]);
+
+  // Sin esperar el debounce: al mandar la app a segundo plano (el sistema puede matarla
+  // ahí mismo) y al salir de la pantalla, se guarda en el acto para no perder los
+  // últimos 600ms de cambios.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado !== 'active') guardarAhoraRef.current();
+    });
+    return () => {
+      sub.remove();
+      guardarAhoraRef.current();
+    };
+  }, []);
 
   const usarUbicacion = async () => {
     const coords = await obtenerUbicacion();
@@ -316,26 +461,54 @@ export default function PublicarWizardScreen({ route, navigation }) {
     }
   };
 
+  // Antes estas llamadas no tenían catch: si el picker o la cámara fallaban (p. ej. no hay
+  // app de cámara, o el sistema mata la actividad) quedaba una promesa rechazada sin
+  // manejar y la persona no se enteraba de nada.
   const elegirDeGaleria = async () => {
     const restantes = MAX_FOTOS_PUBLICACION - fotos.length;
     if (restantes <= 0) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      ...PICKER_OPTIONS_FOTO,
-      allowsMultipleSelection: true,
-      selectionLimit: restantes,
-    });
-    if (!result.canceled) await agregarFotos(result.assets ?? []);
+    try {
+      // Sin pedir permiso de galería a propósito: en Android el selector de fotos del
+      // sistema no lo necesita.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        ...PICKER_OPTIONS_FOTO,
+        allowsMultipleSelection: true,
+        // Recorta igual por si el dispositivo ignora selectionLimit: nunca más de MAX_FOTOS_PUBLICACION.
+        selectionLimit: restantes,
+      });
+      if (!result.canceled) await agregarFotos((result.assets ?? []).slice(0, restantes));
+    } catch (e) {
+      console.warn('No se pudo abrir la galería', e);
+      Alert.alert('No se pudo abrir la galería', 'Intentá de nuevo.');
+    }
   };
 
   const tomarFoto = async () => {
     if (fotos.length >= MAX_FOTOS_PUBLICACION) return;
-    const permiso = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permiso.granted) {
-      Alert.alert('Permiso necesario', 'Habilitá el acceso a la cámara para tomar la foto.');
-      return;
+    try {
+      const permiso = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permiso.granted) {
+        // canAskAgain=false: la persona lo negó "para siempre" y el sistema ya no muestra
+        // el diálogo; la única forma de habilitarlo es desde la configuración del
+        // dispositivo (mismo criterio que el permiso de ubicación en el paso "Dónde").
+        Alert.alert(
+          'Permiso necesario',
+          'Habilitá el acceso a la cámara para tomar la foto. También podés elegirla desde la galería.',
+          permiso.canAskAgain
+            ? [{ text: 'OK' }]
+            : [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Abrir configuración', onPress: () => Linking.openSettings() },
+              ]
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync(PICKER_OPTIONS_FOTO);
+      if (!result.canceled) await agregarFotos(result.assets ?? []);
+    } catch (e) {
+      console.warn('No se pudo usar la cámara', e);
+      Alert.alert('No se pudo abrir la cámara', 'Intentá de nuevo o elegí la foto desde la galería.');
     }
-    const result = await ImagePicker.launchCameraAsync(PICKER_OPTIONS_FOTO);
-    if (!result.canceled) await agregarFotos(result.assets ?? []);
   };
 
   const moverFoto = (index, delta) => {
@@ -364,37 +537,21 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // Pura (no toca estado): se usa tanto para habilitar/deshabilitar "Siguiente" en cada
   // render (pasoValido abajo) como, al tocar "Siguiente", para decidir si avanzar y qué
   // errores mostrar por campo.
-  const calcularErrores = (p) => {
-    const found = {};
-    if (p === 'tipo' && !tipo) {
-      found.tipo = 'Elegí qué querés publicar.';
-    }
-    if (p === 'fotos' && fotos.length === 0) {
-      found.fotos = 'Agregá al menos una foto.';
-    }
-    if (p === 'detalles') {
-      if (!titulo.trim()) found.titulo = 'El título es obligatorio.';
-      if (!descripcion.trim()) found.descripcion = 'La descripción es obligatoria.';
-      if (!categoria) found.categoria = 'Elegí una categoría.';
-      if (fechaSuceso > new Date()) found.fecha = 'La fecha no puede ser futura.';
-    }
-    if (p === 'ubicacion') {
-      if (!barrioId) found.barrio = 'Elegí el barrio.';
-      // "ya sea escribiéndola o tomando la ubicación actual" (consigna del TP): alcanza
-      // con una de las dos, no hace falta exigir las dos — antes acá se pedían ambas
-      // siempre, lo que bloqueaba "Siguiente" con barrio + dirección ya cargados.
-      const tieneDireccion = Boolean(direccionExacta.trim());
-      const tieneCoordenadas = latExacta != null && lngExacta != null;
-      if (!tieneDireccion && !tieneCoordenadas) {
-        found.ubicacion = 'Escribí la dirección exacta o usá tu ubicación actual.';
-      }
-    }
-    if (p === 'verificacion') {
-      if (!preguntaVerificacion.trim()) found.pregunta = 'Cargá una pregunta de verificación.';
-      if (!respuestaVerificacion.trim()) found.respuesta = 'Cargá la respuesta correcta.';
-    }
-    return found;
-  };
+  const calcularErrores = (p) =>
+    erroresDe(p, {
+      tipo,
+      fotos,
+      titulo,
+      descripcion,
+      categoria,
+      fechaSuceso,
+      barrioId,
+      direccionExacta,
+      latExacta,
+      lngExacta,
+      preguntaVerificacion,
+      respuestaVerificacion,
+    });
 
   // Antes "Siguiente" solo validaba al tocarlo, así que se podía avanzar de un paso vacío
   // con un solo toque extra; ahora el botón queda deshabilitado hasta que el paso actual
@@ -429,6 +586,24 @@ export default function PublicarWizardScreen({ route, navigation }) {
     setIndice(Math.max(0, indice - 1));
   };
 
+  // Botón "atrás" de Android (y la flecha del header): como los pasos son estado interno
+  // de UNA pantalla y no pantallas del stack, por defecto salían del wizard entero. Ahora
+  // retroceden un paso, igual que el botón "Atrás"; recién en el primer paso salen de la
+  // pantalla (el borrador queda guardado igual). No intercepta la salida después de
+  // publicar/encolar (navigate a MisPublicaciones no es GO_BACK/POP, y terminadoRef).
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', (e) => {
+        if (terminadoRef.current || indice === 0) return;
+        const accion = e.data.action.type;
+        if (accion !== 'GO_BACK' && accion !== 'POP') return;
+        e.preventDefault();
+        setErrores({});
+        setIndice((actual) => Math.max(0, actual - 1));
+      }),
+    [navigation, indice]
+  );
+
   // Punto 6 (sección 4.4 del plan): sin conexión, el alta no se intenta (o se intenta y
   // falla por red) — la publicación se encola en vez de perderse, y la cola la procesa
   // services/offline/colaProcesador.js cuando vuelva la conexión. construirBorrador() se
@@ -437,7 +612,17 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // que pudo antes de fallar.
   const encolarYSalir = async () => {
     terminadoRef.current = true;
-    await agregarACola(user.id, construirBorrador());
+    try {
+      await agregarACola(user.id, construirBorrador());
+    } catch {
+      // No se pudo guardar en la cola (almacenamiento lleno, etc.): el borrador sigue
+      // intacto (agregarACola no lo borra si falla), así que se vuelve a habilitar el
+      // autoguardado y se avisa en vez de mostrar un "guardamos tu publicación" falso.
+      terminadoRef.current = false;
+      setPublicando(false);
+      setErrorEnvio('No hay conexión y no pudimos guardar la publicación para enviarla después. Intentá de nuevo.');
+      return;
+    }
     setPublicando(false);
     Alert.alert(
       'Sin conexión',
@@ -447,6 +632,22 @@ export default function PublicarWizardScreen({ route, navigation }) {
   };
 
   const publicar = async () => {
+    // Candado sincrónico contra el doble toque: `publicando` es estado de React y recién
+    // deshabilita el botón en el próximo render, así que dos toques en el mismo frame
+    // arrancaban dos envíos (fotos subidas dos veces y dos POST con el mismo
+    // clientRequestId, donde el segundo choca con la restricción única del backend y
+    // muestra un error aunque la publicación sí se creó). Una ref cambia en el acto.
+    // terminadoRef: ya se publicó o encoló; no se vuelve a mandar desde esta pantalla.
+    if (enviandoRef.current || terminadoRef.current) return;
+    enviandoRef.current = true;
+    try {
+      await publicarSinCandado();
+    } finally {
+      enviandoRef.current = false;
+    }
+  };
+
+  const publicarSinCandado = async () => {
     setPublicando(true);
     setErrorEnvio('');
 
@@ -477,6 +678,14 @@ export default function PublicarWizardScreen({ route, navigation }) {
         { text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisPublicaciones') },
       ]);
     } catch (e) {
+      // Una foto ya no existe en el dispositivo: se sacan las que faltan y se vuelve al
+      // paso de fotos (no es un error de red, encolarla no serviría de nada).
+      if (e.code === FOTO_FALTANTE) {
+        setFotos((actuales) => actuales.filter((f) => f.url || existeArchivo(f.uri)));
+        setIndice(pasos.indexOf('fotos'));
+        Alert.alert('Falta una foto', e.message);
+        return;
+      }
       // NetInfo pudo no haber avisado todavía (o el problema es que el propio backend es
       // inalcanzable, no la red del dispositivo): si la request falló sin respuesta,
       // tratamos esto como offline igual, aunque sinConexion dijera que sí había conexión.
@@ -570,13 +779,20 @@ export default function PublicarWizardScreen({ route, navigation }) {
 
       {paso === 'detalles' ? (
         <View style={styles.paso}>
-          <TextField label="Título" value={titulo} onChangeText={setTitulo} error={errores.titulo} />
+          <TextField
+            label="Título"
+            value={titulo}
+            onChangeText={setTitulo}
+            error={errores.titulo}
+            maxLength={MAX_LARGO.titulo}
+          />
           <TextField
             label="Descripción"
             value={descripcion}
             onChangeText={setDescripcion}
             error={errores.descripcion}
             multiline
+            maxLength={MAX_LARGO.descripcion}
           />
           <View>
             <Text style={styles.label}>Categoría</Text>
@@ -635,6 +851,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
             value={direccionExacta}
             onChangeText={setDireccionExacta}
             multiline
+            maxLength={MAX_LARGO.direccionExacta}
           />
           {/* A diferencia de BarrioOUbicacionPicker (buscador, donde barrio y ubicación son
              excluyentes), acá los dos campos conviven: el barrio ubica la publicación en el
@@ -668,7 +885,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
       {paso === 'verificacion' ? (
         <View style={styles.paso}>
           <Text style={styles.ayuda}>
-            Cargá una pregunta sobre un detalle que NO se vea en las fotos (ej. "¿De qué color es el forro?") y su
+            Cargá una pregunta sobre un detalle que NO se vea en las fotos (ej. “¿De qué color es el forro?”) y su
             respuesta. Así podés confirmar que quien reclama de verdad es el dueño.
           </Text>
           <TextField
@@ -676,12 +893,14 @@ export default function PublicarWizardScreen({ route, navigation }) {
             value={preguntaVerificacion}
             onChangeText={setPreguntaVerificacion}
             error={errores.pregunta}
+            maxLength={MAX_LARGO.preguntaVerificacion}
           />
           <TextField
             label="Respuesta correcta"
             value={respuestaVerificacion}
             onChangeText={setRespuestaVerificacion}
             error={errores.respuesta}
+            maxLength={MAX_LARGO.respuestaVerificacion}
           />
           <Text style={styles.ayudaPrivada}>🔒 La respuesta es privada: nunca se le muestra a nadie, ni siquiera a quien reclama.</Text>
         </View>

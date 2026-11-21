@@ -1,3 +1,4 @@
+import { existeArchivo } from './borradorPublicacionStorage';
 import { crearPublicacion, subirFotoPublicacion } from './publicacionesService';
 
 // Orquesta el alta completa de una publicación: sube las fotos pendientes (en orden) y
@@ -23,8 +24,24 @@ import { crearPublicacion, subirFotoPublicacion } from './publicacionesService';
 // final; si lanza, se corta el envío. La cola offline lo usa para no seguir mandando con
 // la sesión de OTRA persona si mientras tanto se cerró sesión y entró otro usuario (el
 // interceptor de api.js toma el token vigente en cada request).
+//
+// Error con code FOTO_FALTANTE: alguna foto todavía no subida ya no existe en el
+// dispositivo. Se chequea ANTES de subir nada: sin esto, la subida de un archivo
+// inexistente falla sin respuesta del servidor y se confundía con "sin conexión"
+// (esErrorDeRed), así que la cola offline la reintentaba para siempre.
+export const FOTO_FALTANTE = 'FOTO_FALTANTE';
+
+function verificarFotosLocales(fotos) {
+  if (fotos.some((foto) => !foto.url && !existeArchivo(foto.uri))) {
+    const e = new Error('Una de las fotos ya no está disponible en el dispositivo. Editá la publicación y volvé a agregarla.');
+    e.code = FOTO_FALTANTE;
+    throw e;
+  }
+}
+
 export async function enviarPublicacion(borrador, callbacks = {}) {
   const { onFotoSubida, antesDeCadaRequest } = callbacks;
+  verificarFotosLocales(borrador.fotos);
   const fotos = [];
   for (const foto of borrador.fotos) {
     if (foto.url) {
@@ -34,7 +51,10 @@ export async function enviarPublicacion(borrador, callbacks = {}) {
     await antesDeCadaRequest?.();
     const { photoUrl } = await subirFotoPublicacion(foto.uri);
     fotos.push(photoUrl);
-    onFotoSubida?.(foto, photoUrl);
+    // await: si el callback es async (la cola offline persiste en AsyncStorage), se espera
+    // a que termine antes de seguir, para que esa escritura no quede "volando" y pise algo
+    // escrito después (ver colaProcesador).
+    await onFotoSubida?.(foto, photoUrl);
   }
 
   const esEncontrado = borrador.tipo === 'encontrado';

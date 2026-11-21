@@ -5,7 +5,7 @@ App **Hallado**. Este documento cubre:
 5. **Publicar un Hallazgo o una Pérdida**
 6. **Modo Sin Conexión**
 
-Se apoya en lo ya construido para los puntos 1-4 (`AuthContext`, `api.js`, la entidad `Publicacion`/`FotoPublicacion` y `PublicacionMapper` del plan 3-4) sin tocar su contrato existente, siguiendo las reglas de `.docs/INTEGRACION.md`. Este documento se escribió en varias entregas: primero el **backend completo del Punto 5** (secciones 0-7: alta, "Mis publicaciones", renovación, vencimiento automático), después su **frontend** (secciones 8-13: wizard con borrador persistente, "Mis publicaciones", navegación), un ajuste de ese frontend tras pruebas en emulador (sección 14) y, por último, el **Punto 6 completo** (modo sin conexión: sección 15) — conectividad, caché de detalles/resultados, cola de publicaciones pendientes y deshabilitar acciones que requieren red.
+Se apoya en lo ya construido para los puntos 1-4 (`AuthContext`, `api.js`, la entidad `Publicacion`/`FotoPublicacion` y `PublicacionMapper` del plan 3-4) sin tocar su contrato existente, siguiendo las reglas de `.docs/INTEGRACION.md`. Este documento se escribió en varias entregas: primero el **backend completo del Punto 5** (secciones 0-7: alta, "Mis publicaciones", renovación, vencimiento automático), después su **frontend** (secciones 8-13: wizard con borrador persistente, "Mis publicaciones", navegación), un ajuste de ese frontend tras pruebas en emulador (sección 14) y, por último, el **Punto 6 completo** (modo sin conexión: sección 15) — conectividad, caché de detalles/resultados, cola de publicaciones pendientes y deshabilitar acciones que requieren red. La **sección 16** resume las correcciones posteriores a la revisión del profesor (retomar el borrador en el paso donde quedó, recuperación del modo "sin conexión", reintentos de la cola, etc.); las secciones anteriores ya están actualizadas con ese comportamiento.
 
 ## 0. Límites con otros puntos (importante para no pisar trabajo ajeno)
 
@@ -103,18 +103,19 @@ En orden, todas con `ApiException(BAD_REQUEST, mensaje)` (mismo patrón manual q
 | Campo | Regla | Mensaje |
 |---|---|---|
 | `tipo` | obligatorio, `perdido`\|`encontrado` | "tipo es obligatorio." / lo valida `TipoPublicacion.fromJson` |
-| `titulo` | obligatorio, no vacío | "El título es obligatorio." |
-| `descripcion` | obligatorio, no vacío | "La descripción es obligatoria." |
+| `titulo` | obligatorio, no vacío, máx. 120 caracteres | "El título es obligatorio." / "El título no puede tener más de 120 caracteres." |
+| `descripcion` | obligatorio, no vacío, máx. 2000 caracteres | "La descripción es obligatoria." / ídem largo |
 | `categoria` | obligatoria, una de las 6 fijas | "La categoría es obligatoria." / `Categoria.fromJson` |
 | `fechaSuceso` | obligatoria, **no futura** (`isAfter(Instant.now())` rechazado) | "La fecha del suceso no puede ser futura." |
 | `franjaHoraria` | opcional (igual que en la entidad) | — |
 | `barrioId` | obligatorio, debe existir | "El barrio elegido no existe." |
-| `direccionExacta` | obligatoria (texto libre) | "La dirección exacta es obligatoria." |
-| `latExacta`/`lngExacta` | obligatorias ambas | "Las coordenadas del lugar son obligatorias (usá tu ubicación actual)." |
+| `direccionExacta` / `latExacta`+`lngExacta` | al menos uno de los dos (ver 14.2); dirección máx. 255 caracteres | "Indicá la dirección exacta escribiéndola o usando tu ubicación actual." |
 | `fotos` | al menos 1 URL no vacía | "Agregá al menos una foto." |
-| `preguntaVerificacion`/`respuestaVerificacion` | **obligatorias** si `tipo=encontrado`, **prohibidas** si `tipo=perdido` | mensaje específico para cada caso |
+| `preguntaVerificacion`/`respuestaVerificacion` | **obligatorias** si `tipo=encontrado`, **prohibidas** si `tipo=perdido`; máx. 200 / 100 caracteres | mensaje específico para cada caso |
 
-Decisión de diseño sobre dirección/coordenadas: el TP dice "indicar el barrio y la dirección exacta, ya sea escribiéndola o tomando la ubicación actual (cargar coordenadas)" — se interpretó como que el texto libre y las coordenadas son dos campos independientes que **ambos** terminan necesitándose (el texto para mostrarlo al dueño cuando corresponda, las coordenadas para calcular la ubicación aproximada del mapa de resultados, sección 4.3 abajo), así que el backend los exige a los dos. El frontend puede resolverlo con un solo paso: tomar la ubicación actual rellena automáticamente ambos (coordenadas + reverse-geocoding o un texto editable), y quien prefiera escribir la dirección a mano igual puede capturar coordenadas aproximadas del mismo picker de ubicación que ya usa el Punto 3 (`useUbicacionActual`).
+Los largos máximos (sección 16, #6) son los mismos que limita el wizard con `maxLength` y entran en su columna de la base (255; descripción 4000). Antes no se validaban y un texto más largo que la columna hacía fallar el INSERT: la app recibía un 500 genérico en vez de este 400.
+
+Decisión de diseño (original; **reemplazada por 14.2**, hoy alcanza con dirección o coordenadas) sobre dirección/coordenadas: el TP dice "indicar el barrio y la dirección exacta, ya sea escribiéndola o tomando la ubicación actual (cargar coordenadas)" — se interpretó como que el texto libre y las coordenadas son dos campos independientes que **ambos** terminan necesitándose (el texto para mostrarlo al dueño cuando corresponda, las coordenadas para calcular la ubicación aproximada del mapa de resultados, sección 4.3 abajo), así que el backend los exige a los dos. El frontend puede resolverlo con un solo paso: tomar la ubicación actual rellena automáticamente ambos (coordenadas + reverse-geocoding o un texto editable), y quien prefiera escribir la dirección a mano igual puede capturar coordenadas aproximadas del mismo picker de ubicación que ya usa el Punto 3 (`useUbicacionActual`).
 
 ### 4.3 Ubicación aproximada (`lat`/`lng`)
 
@@ -281,7 +282,11 @@ Pasos, en orden:
 5. Verificación (e, solo si `tipo=encontrado`): pregunta + respuesta, con un texto aclarando que la respuesta es privada y nunca se muestra a nadie (consigna del TP, punto 5).
 6. Resumen (f): repaso de lo cargado + miniaturas, botón "Publicar" dispara el envío (sección 10.3).
 
-Cada "Siguiente" valida solo los campos del paso actual antes de avanzar, con errores por campo igual que el resto del repo.
+Cada "Siguiente" valida solo los campos del paso actual antes de avanzar, con errores por campo igual que el resto del repo. La validación es una función pura fuera del componente (`erroresDe(paso, datos)`), igual que la lista de pasos (`pasosPara(tipo)`): así se reusan tanto en el render como al restaurar un borrador (sección 10.4).
+
+Como los pasos son estado interno y no pantallas del stack, el botón "atrás" de Android (y la flecha del header) salían del wizard entero. Un listener `beforeRemove` los intercepta: retroceden un paso, igual que el botón "Atrás", y recién en el primer paso salen de la pantalla. No intercepta la salida después de publicar o encolar.
+
+"Publicar" tiene un candado con `useRef` (`enviandoRef`) además del estado `publicando`: el estado recién deshabilita el botón en el próximo render, así que dos toques en el mismo frame arrancaban dos envíos; la ref cambia en el acto.
 
 ### 10.3 Envío separado de la UI (services/publicarPublicacion.js)
 
@@ -291,11 +296,14 @@ Esto es justo lo que pide el enunciado: queda listo para que el Punto 6 (cola of
 
 ### 10.4 Borrador persistente (services/borradorPublicacionStorage.js)
 
-- Texto y selecciones (tipo, título, descripción, categoría, fecha, franja, barrio, dirección, coordenadas, pregunta/respuesta, clientRequestId): `AsyncStorage`, con una clave por usuario (para no mezclar el borrador de una cuenta con el de otra en el mismo dispositivo si hacen logout/login — mismo criterio de "qué va en AsyncStorage" que ya documenta `INTEGRACION.md`).
+- Texto y selecciones (paso actual, tipo, título, descripción, categoría, fecha, franja, barrio, dirección, coordenadas, pregunta/respuesta, clientRequestId): `AsyncStorage`, con una clave por usuario (para no mezclar el borrador de una cuenta con el de otra en el mismo dispositivo si hacen logout/login — mismo criterio de "qué va en AsyncStorage" que ya documenta `INTEGRACION.md`).
 - Fotos: cada una se copia, apenas se elige, a un directorio propio y persistente de la app con `expo-file-system` — la URI original del picker (caché) no es segura para un borrador que puede durar días. Al eliminar una foto del wizard también se borra su archivo, para no acumular basura entre ediciones.
-- Autoguardado con debounce: un efecto en el wizard guarda el borrador 600ms después del último cambio relevante (no en cada tecla tipeada), y no corre hasta que se resolvió si había que ofrecer "Retomar"/"Descartar" (para no pisar un borrador existente con el estado inicial vacío mientras se está preguntando).
+- El paso se guarda **por nombre** (`paso: 'detalles'`), no por número: la cantidad de pasos cambia según el tipo (Verificación solo existe para "encontrado"), así que el índice solo no alcanza para ubicarse.
+- Autoguardado con debounce: un efecto en el wizard guarda el borrador 600ms después del último cambio relevante (no en cada tecla tipeada), incluido **cambiar de paso**, y no corre hasta que se resolvió si había que ofrecer "Retomar"/"Descartar" (para no pisar un borrador existente con el estado inicial vacío mientras se está preguntando). Además se guarda en el acto, sin esperar el debounce, al mandar la app a segundo plano (`AppState`, el sistema puede matarla ahí mismo) y al salir de la pantalla. No se guarda un wizard "vacío" (todavía en el paso 1 y sin fotos), para que abrir y cerrar el wizard no deje un aviso de "Publicación sin terminar".
 - Al entrar al wizard: si hay un borrador guardado, se muestra un aviso con "Descartar" (borra borrador + fotos y aplica el prefill que haya llegado por params, si se vino de ResultadosScreen) y "Retomar" (restaura todo el estado, reusando el mismo clientRequestId del borrador — necesario para que, si ese intento ya había llegado a crear la publicación en el backend pero la respuesta no volvió, reintentar no duplique).
-- Al publicar con éxito: se borra la clave de AsyncStorage y el directorio entero de fotos de una sola vez.
+- "Retomar" navega **directo al paso guardado** (`indiceParaRetomar`), con todos los datos precargados y pudiendo volver a los anteriores. Si un paso anterior quedó incompleto (por ejemplo, se perdió una foto), se frena en el primero incompleto. Un borrador viejo sin paso guardado, o con un paso que ya no existe para ese tipo, cae directo en el primer paso incompleto: nunca rompe, en el peor caso arranca en el paso 1.
+- Al restaurar se verifica cada foto (`restaurarFotosDelBorrador`): las ya subidas (con `url`) se conservan; las que existen pero están fuera de `Paths.document` (la caché del picker, en borradores viejos) se copian a la carpeta del borrador; las que ya no existen se descartan y se avisa cuántas faltan.
+- Al publicar con éxito, o al tocar "Descartar": se borra la clave de AsyncStorage y el directorio entero de fotos de una sola vez.
 
 ### 10.5 "Mis publicaciones"
 
@@ -316,7 +324,10 @@ Esto es justo lo que pide el enunciado: queda listo para que el Punto 6 (cola of
 - [x] Resumen final antes de publicar; "Publicar" sube las fotos y hace el alta reusando enviarPublicacion (no hay lógica de red duplicada en la pantalla).
 - [x] El borrador se autoguarda en cada paso (con debounce) en AsyncStorage, por usuario; las fotos se copian a un directorio persistente con expo-file-system, no quedan en la URI de caché del picker.
 - [x] Al entrar al wizard con un borrador guardado, se ofrece Retomar/Descartar antes de mostrar cualquier paso.
-- [x] Borrador y fotos se borran al publicar con éxito.
+- [x] "Retomar" abre en el paso donde se había dejado, con todo precargado y pudiendo volver a los pasos anteriores; un borrador viejo sin paso guardado no rompe.
+- [x] Al restaurar se verifica que las fotos existan (las de caché se copian, las que faltan se descartan con aviso).
+- [x] Borrador y fotos se borran al publicar con éxito o al descartar.
+- [x] El botón atrás de Android retrocede un paso del wizard; "Publicar" no se puede disparar dos veces.
 - [x] "Mis publicaciones" lista los 4 estados con EstadoChip (vía PublicationCard), muestra "Renovar" solo cuando corresponde, y abre el detalle existente al tocar un item.
 - [x] Los dos placeholders "Próximamente" fueron reemplazados por navegación real.
 - [x] expo lint y expo-doctor (21/21) corren sin errores sobre todo el código nuevo.
@@ -330,7 +341,7 @@ Con el backend corriendo y la app contra él (USE_MOCK = false, API_BASE_URL apu
 2. Ir a la tab Publicar y tocar "+ Nueva publicación".
 3. Elegir "Perdí algo", cargar 1-2 fotos (probar cámara y galería), completar detalles con una fecha pasada, elegir barrio + escribir una dirección + tocar "Usar mi ubicación actual" (pide permiso de ubicación la primera vez), confirmar el resumen y publicar. Debería aparecer en "Mis publicaciones" con estado "Abierta".
 4. Repetir eligiendo "Encontré algo": el wizard debe pedir pregunta + respuesta de verificación antes del resumen.
-5. Probar el borrador: empezar una publicación, completar 2-3 pasos, salir de esa pantalla antes de publicar, volver a entrar a "Publicar" y tocar "+ Nueva publicación": debe aparecer el aviso "Publicación sin terminar" con Retomar/Descartar. "Retomar" debe reponer exactamente lo que se había cargado, fotos incluidas.
+5. Probar el borrador: empezar una publicación, completar 2-3 pasos, salir de esa pantalla antes de publicar, volver a entrar a "Publicar" y tocar "+ Nueva publicación": debe aparecer el aviso "Publicación sin terminar" con Retomar/Descartar. "Retomar" debe reponer exactamente lo que se había cargado, fotos incluidas, **y abrir en el mismo paso donde se había dejado** (también cerrando la app del todo entre medio). "Atrás" debe llevar a los pasos anteriores con sus datos.
 6. Probar "Renovar": no hay forma de llegar a una publicación vencida esperando 30 días reales; se puede forzar la fecha de vencimiento al pasado con la consola H2 tal como describe la sección 6 de este plan para el backend, y después ver que "Mis publicaciones" muestra el botón "Renovar" y que al tocarlo la publicación vuelve a "Abierta".
 7. Probar el flujo cruzado: desde la tab Buscar, hacer una búsqueda sin resultados y tocar "Publicar lo que perdí/encontré" — debe abrir el wizard con el tipo (y categoría/barrio si se habían elegido) ya precargados.
 8. Desde el detalle de una publicación propia, tocar "Gestionar publicación" — debe llevar a "Mis publicaciones".
@@ -338,7 +349,7 @@ Con el backend corriendo y la app contra él (USE_MOCK = false, API_BASE_URL apu
 ## 13. Riesgos y pendientes de definir con el equipo (frontend)
 
 1. Reordenar fotos con botones, no arrastre: se usaron flechas en vez de un drag-and-drop (que exigiría una librería de gestos no vista en clase). Es más lento para reordenar muchas fotos, pero cumple el requisito sin sumar dependencias ajenas al programa de la materia.
-2. "Dirección o referencia exacta" como texto libre: no hay reverse-geocoding (ver riesgo 5 de la sección 7, backend) — la persona tiene que describir el lugar con sus palabras aunque ya haya tocado "Usar mi ubicación actual"; los dos campos no se autocompletan entre sí.
+2. **~~"Dirección o referencia exacta" sin geocoding~~ (resuelto en 14.2)**: "Usar mi ubicación actual" sugiere la dirección con `Location.reverseGeocodeAsync` (editable, y solo si el campo está vacío), y una dirección escrita a mano intenta resolver coordenadas con `Location.geocodeAsync` en segundo plano. Los dos son de mejor esfuerzo (con timeout, sin bloquear el avance): si fallan, la persona completa el campo a mano o el backend usa el centro del barrio para el mapa.
 3. No hay progreso visual de subida de fotos: el botón "Publicar" queda en estado de carga durante toda la subida + alta, pero la persona no ve "foto 2 de 4" mientras tanto. enviarPublicacion ya expone el gancho necesario para agregarlo sin tocar la lógica de envío.
 4. Punto 6 (offline): ya implementado — ver sección 15.
 5. La carpeta del borrador no se limpia si la persona nunca publica ni descarta: si abandona el wizard sin tocar "Descartar" (por ejemplo cierra la app y nunca vuelve a esa sección), el borrador y sus fotos quedan guardados indefinidamente — es el comportamiento que pide la consigna ("al volver encuentra el borrador conservado"), pero vale la pena que el equipo lo tenga presente como posible fuente de espacio ocupado en el dispositivo a largo plazo.
@@ -393,9 +404,9 @@ Toda la persistencia offline vive encapsulada acá, con un criterio estricto: **
 ```text
 services/offline/
   detallesCache.js      # guardarDetalle, obtenerDetalle, eliminarDetalle — LRU de 20
-  resultadosCache.js     # guardarResultados, obtenerUltimosResultados — un solo slot
+  resultadosCache.js     # guardarResultados, obtenerResultadosGuardados — últimas 5 búsquedas
   colaPendientes.js      # listarCola, agregarACola, actualizarItem, quitarDeCola,
-                          # descartarItem, pasarAEdicion — CRUD puro, sin red
+                          # descartarItem, pasarAEdicion, reintentarItem — CRUD puro, sin red
   colaProcesador.js      # procesarColaPendientes() — orquesta el envío (sí usa red);
                           # separado de colaPendientes.js porque esa parte no es
                           # "almacenamiento" y mezclarla ahí violaría la separación pedida
@@ -413,7 +424,7 @@ services/offline/
 - `isConnected === true` y `isInternetReachable === true` → `'online'`.
 - Cualquier otro caso (`isConnected` o `isInternetReachable` todavía `null`) → `'desconocido'`.
 
-**Además de NetInfo**, cualquier request de Axios que falle sin respuesta fuerza `'offline'` de inmediato vía `notificarErrorDeRed()` (expuesta por el hook), inyectada en el interceptor de `services/api.js` desde `AuthContext` — mismo patrón que ya usa ese interceptor con `logoutFn`. Esto cubre el caso que pidió explícitamente el feedback: NetInfo puede seguir diciendo "conectado" (hay wifi) mientras el propio backend está caído o la conexión es demasiado mala para que una request real llegue a destino; en ese caso, ningún código de pantalla necesita acordarse de llamar a nada — ocurre solo con que esa pantalla use `api` (todas lo hacen). El "forzado offline" se levanta solo cuando NetInfo vuelve a confirmar conexión real, no con un timer.
+**Además de NetInfo**, cualquier request de Axios que falle sin respuesta fuerza `'offline'` de inmediato vía `notificarErrorDeRed()` (expuesta por el hook), inyectada en el interceptor de `services/api.js` desde `AuthContext` — mismo patrón que ya usa ese interceptor con `logoutFn`. Esto cubre el caso que pidió explícitamente el feedback: NetInfo puede seguir diciendo "conectado" (hay wifi) mientras el propio backend está caído o la conexión es demasiado mala para que una request real llegue a destino; en ese caso, ningún código de pantalla necesita acordarse de llamar a nada — ocurre solo con que esa pantalla use `api` (todas lo hacen). El "forzado offline" se levanta de dos formas: cuando NetInfo confirma conexión real, o cuando el backend vuelve a responder. Lo segundo hizo falta porque NetInfo solo avisa cuando la red **cambia**: si el wifi seguía igual (p. ej. el backend se cayó un momento y volvió), la app quedaba "sin conexión" para siempre. Mientras está forzado (y NetInfo no dice que directamente no hay red), se hace un ping al backend (`backendAlcanzable()` en `services/offline/estadoConexion.js`, `GET /barrios` con axios sin interceptores para que un 401 nunca haga logout; cualquier respuesta HTTP cuenta como alcanzable) con backoff exponencial: 10s, 20s, 40s y después cada 60s como máximo, nunca más de un ping a la vez. Al volver la app a primer plano se prueba en el acto. Cuando responde, `estado` pasa de `'offline'` a online y el efecto de `AuthContext` procesa la cola (sección 15.6).
 
 `App.js` pasó a envolver con `ConnectivityProvider` **por fuera** de `AuthProvider` (antes era el proveedor más externo): `AuthProvider` necesita `useConnectivity()` para conseguir `notificarErrorDeRed` antes de llamar a `setupInterceptors`.
 
@@ -430,28 +441,44 @@ services/offline/
 
 ### 15.5 Caché de resultados (`services/offline/resultadosCache.js`)
 
-Un solo slot, no una caché por combinación de filtros — coincide con la letra de la consigna ("la app muestra los últimos resultados cargados exitosamente", no "los de esta búsqueda en particular"). `ResultadosScreen` guarda la **primera página** de cada búsqueda exitosa (no las páginas de "cargar más": alcanza con la primera, es más simple y evita tener que fusionar estados de scroll infinito con lo cacheado). Sin conexión, o ante un error de red, se muestra ese último snapshot con un aviso ("Mostrando los últimos resultados guardados — pueden no estar actualizados") y la paginación queda deshabilitada (`mostrandoCache` corta `pedirSiguientePagina`): no tiene sentido pedir "más" de un snapshot fijo. Las fotos de los resultados **no** se bajan a disco (a diferencia del detalle): la consigna solo pide eso para el detalle, y agregarlo acá para el listado completo hubiera sido un alcance no pedido — sin conexión, las miniaturas de `PublicationCard` simplemente no cargan.
+Un slot **por búsqueda**, no uno solo: se guardan las últimas `MAX_BUSQUEDAS_RECIENTES` (5, el mismo tope que las "últimas búsquedas" del buscador), cada una identificada por una clave armada con sus filtros normalizados + el orden (`claveBusqueda`: texto en minúsculas y sin espacios repetidos, coordenadas redondeadas a ~100 m para que dos lecturas de GPS desde el mismo lugar cuenten como la misma búsqueda, fechas solo si el rango es personalizado). Al guardar, la búsqueda pasa al frente de la lista y, si ya estaba, se reemplaza. (Una versión anterior usaba un único slot; su clave vieja se borra al guardar.)
+
+`ResultadosScreen` guarda la **primera página** de cada búsqueda exitosa (`guardarResultados`), no las páginas de "cargar más": alcanza con la primera, es más simple y evita tener que fusionar estados de scroll infinito con lo cacheado. Sin conexión, o ante un error de red, pide `obtenerResultadosGuardados(filtros, orden)`, que devuelve:
+
+- **La misma búsqueda** si está guardada (`coincide: true`): se muestra con el aviso "Mostrando los últimos resultados guardados hace … — pueden no estar actualizados".
+- Si no, **la última búsqueda guardada** (`coincide: false`): se muestra igual, avisando que es de otra búsqueda, con un resumen legible de sus filtros (`resumen`, p. ej. "Perdí · Mascotas · "gato gris" · Palermo · Última semana"; el nombre del barrio se toma de los propios resultados porque sin conexión no se puede pedir `GET /barrios`).
+- `null` si nunca se guardó nada: mensaje de error de "no hay resultados guardados".
+
+Así se cumple la letra de la consigna ("la app muestra los últimos resultados cargados exitosamente") y, cuando se puede, se muestran los de esa búsqueda en particular. Mientras se muestra un caché, la paginación queda deshabilitada (`pedirSiguientePagina` no hace nada si hay `cache`): no tiene sentido pedir "más" de un snapshot fijo. Las fotos de los resultados **no** se bajan a disco (a diferencia del detalle): la consigna solo pide eso para el detalle, y agregarlo acá para el listado completo hubiera sido un alcance no pedido — sin conexión, las miniaturas de `PublicationCard` simplemente no cargan.
 
 ### 15.6 Publicar sin conexión: cola + procesador
 
-**Cola** (`colaPendientes.js`): cada ítem es `{ clientRequestId, borrador, estado: 'pendiente'|'error', mensajeError, creadaEn }`, con `borrador` en la misma forma que ya arma `PublicarWizardScreen` (`construirBorrador()`).
+**Cola** (`colaPendientes.js`): cada ítem es `{ clientRequestId, borrador, estado: 'pendiente'|'error', mensajeError, creadaEn, intentos, proximoIntentoEn }` (los dos últimos, para los reintentos ante errores del servidor), con `borrador` en la misma forma que ya arma `PublicarWizardScreen` (`construirBorrador()`).
 
-- `agregarACola(userId, borrador)`: mueve la carpeta de fotos del borrador (`borrador-publicacion/{clientRequestId}`, Punto 5) a su propia carpeta de la cola (`cola-publicaciones/{clientRequestId}`) con `Directory.move()` — **no copia ni descarga nada de nuevo**, reusa exactamente el mecanismo que ya armó el borrador. Después borra solo el *registro* del borrador en AsyncStorage (`borrarRegistroBorrador`, nueva función en `borradorPublicacionStorage.js`) — nunca la carpeta de fotos a mano, porque ya se movió (o, si el `move` falló, sigue intacta y el ítem la sigue referenciando ahí mismo).
+- `agregarACola(userId, borrador)`: mueve la carpeta de fotos del borrador (`borrador-publicacion/{clientRequestId}`, Punto 5) a su propia carpeta de la cola (`cola-publicaciones/{clientRequestId}`) con `Directory.move()` — **no copia ni descarga nada de nuevo**, reusa exactamente el mecanismo que ya armó el borrador. Después borra solo el *registro* del borrador en AsyncStorage (`borrarRegistroBorrador`, nueva función en `borradorPublicacionStorage.js`) — nunca la carpeta de fotos a mano, porque ya se movió (o, si el `move` falló, sigue intacta y el ítem la sigue referenciando ahí mismo). Si falla la escritura de la cola en AsyncStorage, el error ya no se ignora: las fotos vuelven a la carpeta del borrador, **no** se borra el borrador y el wizard muestra el error (antes la publicación no quedaba ni en la cola ni como borrador).
 - Para que esto fuera seguro, `borradorPublicacionStorage.js` pasó a tener **una carpeta por `clientRequestId`** (`borrador-publicacion/{clientRequestId}`) en vez de una única carpeta compartida: antes, `borrarBorrador()` borraba una carpeta plana entera, lo que habría arrasado con las fotos de un ítem ya encolado si coexistían ahí. `copiarFotoAlBorrador` y `borrarBorrador` pasaron a recibir `clientRequestId` como parámetro.
-- `pasarAEdicion(userId, clientRequestId)` ("Editar" sobre un ítem con error): hace el movimiento inverso (cola → borrador) y guarda ese borrador en AsyncStorage con `guardarBorrador` — **sin ningún camino especial en el wizard**: `PublicarWizardScreen` ya revisa si hay un borrador guardado al montar y ofrece "Retomar", así que simplemente lo encuentra ahí. Reusar ese mecanismo evitó duplicar la lógica de "entrar al wizard con datos precargados".
+- `pasarAEdicion(userId, clientRequestId)` ("Editar" sobre un ítem con error): hace el movimiento inverso (cola → borrador) y guarda ese borrador en AsyncStorage con `guardarBorrador`. Después "Mis publicaciones" navega al wizard con `{ retomar: true }`: el wizard usa su mecanismo normal de restaurar el borrador (mismo paso guardado, mismas verificaciones de fotos), pero sin preguntar "¿Retomar o descartar?", porque la persona ya eligió editar. Reusar ese mecanismo evitó duplicar la lógica de "entrar al wizard con datos precargados".
+- `reintentarItem(userId, clientRequestId)` ("Reintentar" sobre un ítem con error): lo vuelve a `pendiente` con `intentos` en cero; la pantalla dispara el procesador en el acto si hay conexión.
 - `quitarDeCola`/`descartarItem` (mismo código, nombre distinto según la intención del llamador): saca el ítem y borra su carpeta de fotos.
 
 **Procesador** (`colaProcesador.js`, `procesarColaPendientes()`):
-- Recorre la cola en orden (FIFO = orden de creación) y, por cada ítem `pendiente`, llama a `enviarPublicacion` (el mismo módulo sin UI del Punto 5) con un `onFotoSubida` que persiste el progreso parcial en el ítem — si una publicación tiene 4 fotos y falla subiendo la 3ª, el próximo intento no vuelve a subir la 1ª y la 2ª.
-- Éxito → `quitarDeCola` (sale de la cola, se borran sus archivos locales).
-- Error de red (`esErrorDeRed`) → el ítem queda `pendiente` tal cual, y se corta el resto de la cola en esa misma corrida (si éste falló por red, los siguientes van a fallar igual; reintentarlos ahora solo demoraría sin sentido). Se reintenta en la próxima corrida.
-- Error 4xx (o cualquier otro que no sea de red) → `estado: 'error'` + `mensajeError` (vía `getErrorMessage`), **no se reintenta sola**: queda esperando que la persona la edite o la descarte desde "Mis publicaciones".
-- Mutex a nivel de módulo (`let procesando = false`, no un estado de React): evita que dos corridas se pisen si el efecto de montaje de `ConnectivityProvider` y una reconexión casi inmediata disparan el procesador casi al mismo tiempo.
-- Disparado desde `ConnectivityProvider`: una vez al montar la app, y cada vez que `estado` pasa de `'offline'` a cualquier otra cosa (`'online'` o `'desconocido'` — ambos valen la pena intentar, ya que `'desconocido'` no implica que de verdad no haya conexión).
+- Recorre la cola en orden (FIFO = orden de creación) y, por cada ítem `pendiente` (salvo los que todavía están esperando su backoff, `proximoIntentoEn` en el futuro), llama a `enviarPublicacion` (el mismo módulo sin UI del Punto 5) con un `onFotoSubida` que persiste el progreso parcial en el ítem — si una publicación tiene 4 fotos y falla subiendo la 3ª, el próximo intento no vuelve a subir la 1ª y la 2ª. Ese guardado se **espera** (`await`): como `actualizarItem` lee, modifica y vuelve a escribir la cola, sin esperarlo podía terminar después de `quitarDeCola` y volver a meter un ítem ya enviado.
+- Antes de subir nada, `enviarPublicacion` verifica que las fotos locales todavía no subidas existan (si no, lanza un error con `code: FOTO_FALTANTE`). Sin esto, subir un archivo inexistente fallaba sin respuesta del servidor, se confundía con "sin conexión" y la cola lo reintentaba para siempre.
+- Qué pasa según el resultado:
 
-**El wizard** (`PublicarWizardScreen.publicar()`): si `sinConexion` ya es `true`, ni intenta la request — encola directo (`encolarYSalir`, que llama a `agregarACola` con un `construirBorrador()` fresco, capturando el progreso real de fotos). Si se intenta online pero la request falla por red a mitad de camino, el mismo `catch` detecta `esErrorDeRed(e)` y encola en vez de mostrar un error — la persona nunca ve "no se pudo publicar" por un problema de conexión, la publicación simplemente queda guardada para enviarse sola.
+| Resultado | Qué hace la cola |
+|---|---|
+| Éxito | `quitarDeCola` (sale de la cola, se borran sus archivos locales). |
+| Error de red o 401 | El ítem queda `pendiente` tal cual y se corta el resto de la corrida (si éste falló por red, los siguientes van a fallar igual). **No consume intentos**: lo reintenta la vuelta de la conexión (sección 15.3) o el próximo login. |
+| 5xx, 408 o 429 | Problema del servidor, no de la publicación: queda `pendiente` con backoff exponencial (30s, 1m, 2m, 4m) y el mensaje "La vamos a reintentar automáticamente". Un único temporizador de módulo agenda la próxima corrida para el ítem más próximo. Al **5º intento fallido** pasa a `error`, para no reintentar infinito. Se sigue con el resto de la cola. |
+| 4xx o `FOTO_FALTANTE` | Reintentar no lo arregla: `estado: 'error'` + `mensajeError`, queda esperando que la persona lo reintente, edite o descarte desde "Mis publicaciones". |
 
-**"Mis publicaciones"**: combina la cola (siempre disponible, es local) con la lista del servidor (solo si hay conexión; si falla por red, se muestra igual la cola sin romper la pantalla). Los ítems pendientes/con error se muestran con una card propia (`PendienteCard`, local al archivo: miniatura de la primera foto ya local, barrio resuelto con la lista de barrios, chip "Pendiente de envío" o "Error al enviar" + el mensaje). Solo los que tienen error muestran botones "Editar"/"Descartar".
+- Mutex a nivel de módulo (`let procesando = false`, no un estado de React): evita que dos corridas se pisen (p. ej. el disparo por login y una reconexión casi inmediata). Si llega un pedido durante una corrida, se recuerda y se corre al terminar.
+- Disparado desde `AuthContext` (no desde `ConnectivityProvider`, que no conoce al usuario y la cola es por usuario): al autenticarse (login, restaurar sesión, desbloqueo biométrico) y cada vez que `estado` pasa de `'offline'` a cualquier otra cosa (`'online'` o `'desconocido'` — ambos valen la pena intentar, ya que `'desconocido'` no implica que de verdad no haya conexión). Además, el temporizador de backoff de los 5xx.
+
+**El wizard** (`PublicarWizardScreen.publicar()`): si `sinConexion` ya es `true`, ni intenta la request — encola directo (`encolarYSalir`, que llama a `agregarACola` con un `construirBorrador()` fresco, capturando el progreso real de fotos). Si se intenta online pero la request falla por red a mitad de camino, el mismo `catch` detecta `esErrorDeRed(e)` y encola en vez de mostrar un error — la persona nunca ve "no se pudo publicar" por un problema de conexión, la publicación simplemente queda guardada para enviarse sola. Si el error es `FOTO_FALTANTE`, en cambio, el wizard saca las fotos que faltan y vuelve al paso de fotos con un aviso.
+
+**"Mis publicaciones"**: combina la cola (siempre disponible, es local) con la lista del servidor (solo si hay conexión; si falla por red, se muestra igual la cola sin romper la pantalla). Los ítems pendientes/con error se muestran con una card propia (`PendienteCard`, local al archivo: miniatura de la primera foto ya local, barrio resuelto con la lista de barrios, chip "Pendiente de envío" o "Error al enviar" + el mensaje). Un pendiente que espera un reintento por error del servidor muestra "La vamos a reintentar automáticamente". Solo los que tienen error muestran botones "Reintentar"/"Editar"/"Descartar".
 
 ### 15.7 Acciones que requieren conexión
 
@@ -476,11 +503,11 @@ Deliberadamente **no** deshabilitadas, porque no necesitan red:
 
 - [x] `ConnectivityContext`/`useConnectivity()` con `estado` tri-estado; `OfflineBanner` visible automáticamente en toda pantalla con `<Screen>`, agregado a mano en las dos que no lo usan.
 - [x] `isInternetReachable === null` se trata como "desconocido", no bloquea nada.
-- [x] Un error de red de Axios fuerza `offline` aunque NetInfo no lo haya detectado todavía.
+- [x] Un error de red de Axios fuerza `offline` aunque NetInfo no lo haya detectado todavía, y la app sale sola de ese estado cuando el backend vuelve a responder (ping con backoff).
 - [x] Detalle: se cachea con éxito (con fotos a disco), LRU de 20, se muestra cacheado sin conexión con aviso.
-- [x] Resultados: se cachea la última búsqueda exitosa, se muestra sin conexión con aviso, paginación desactivada sobre el caché.
+- [x] Resultados: se cachea la primera página de las últimas 5 búsquedas exitosas (por filtros); sin conexión se muestra la misma búsqueda o, si no está, la última guardada, con aviso; paginación desactivada sobre el caché.
 - [x] Publicar sin conexión: se encola con `clientRequestId`, aparece en Mis publicaciones como "Pendiente de envío".
-- [x] La cola se procesa al iniciar la app y al reconectar; éxito saca el ítem y borra sus archivos; error de red reintenta después; error 4xx marca el ítem y permite editarlo o descartarlo.
+- [x] La cola se procesa al iniciar sesión y al reconectar; éxito saca el ítem y borra sus archivos; error de red reintenta al reconectar; 5xx reintenta solo con backoff y un límite de 5 intentos; error 4xx (o foto faltante) marca el ítem y permite reintentarlo, editarlo o descartarlo.
 - [x] Mutex: dos procesamientos no corren a la vez.
 - [x] Acciones que requieren conexión deshabilitadas con mensaje, relevadas en todo el código existente.
 - [x] Todo el almacenamiento offline vive en `services/offline/` (`detallesCache.js`, `resultadosCache.js`, `colaPendientes.js` + `colaProcesador.js`), con funciones async; ninguna pantalla/Context/hook llama a `AsyncStorage`/`expo-file-system` directamente para esto.
@@ -489,8 +516,28 @@ Deliberadamente **no** deshabilitadas, porque no necesitan red:
 ### 15.9 Riesgos y pendientes de definir con el equipo
 
 1. **Caché de resultados sin fotos**: a diferencia del detalle, las miniaturas de `PublicationCard` en resultados cacheados no cargan sin conexión (quedan con su URL remota). Se decidió así porque la consigna solo pide descargar fotos a disco para el detalle (sección 4.2 del TP), no para el listado — bajar fotos de todo un listado paginado hubiera sido un alcance mayor al pedido.
-2. **Un solo slot para resultados**: una nueva búsqueda exitosa pisa el caché de la anterior. Coincide con la letra de la consigna, pero si el equipo quisiera conservar varias búsquedas offline a la vez habría que indexar por filtros (más AsyncStorage, más complejidad) — no se hizo por no pedirse.
+2. **~~Un solo slot para resultados~~ (resuelto)**: el caché ya guarda las últimas 5 búsquedas, indexadas por filtros (ver 15.5). Lo que queda como límite: solo la primera página de cada una, y una búsqueda que no esté entre esas 5 muestra la última guardada (avisando que es otra búsqueda).
 3. **Reintento de la cola es FIFO y se corta en el primer error de red**: si la publicación #1 de 3 falla por red, las #2 y #3 ni se intentan en esa corrida (aunque, por ejemplo, la #2 ya tuviera sus fotos subidas de un intento anterior). Es una simplificación deliberada: en la práctica, si #1 falla por red es porque no hay conexión real, así que #2 y #3 fallarían exactamente igual — procesarlas de todas formas solo agregaría espera.
 4. **`procesando` es una variable de módulo, no persistida**: si la app se cierra a mitad de un `procesarColaPendientes()`, el flag se pierde con el proceso (no hay un `procesando` colgado entre reinicios) — no hace falta persistirlo, el próximo arranque simplemente vuelve a intentar desde cero.
 5. **"Mis publicaciones" sin conexión no actualiza la lista del servidor**: solo muestra la cola (siempre local); la última lista del servidor que se haya visto en memoria se pierde al desmontar la pantalla (no se cachea aparte, a diferencia de resultados/detalle) — no lo pide la consigna para esta pantalla en particular, y hubiera sido una cuarta caché sin pedido explícito.
-6. **Edición de un ítem con error vuelve a mostrar el diálogo "Retomar/Descartar"**: `pasarAEdicion` deja el borrador guardado y navega al wizard, pero el wizard igual pregunta "¿Retomar o empezar de nuevo?" al montar (no distingue "vengo de Editar" de "hay un borrador abandonado") — tocar "Retomar" ahí es la continuación natural, pero es un paso de más que se podría eliminar pasando un parámetro de navegación si se quisiera pulir.
+6. **~~Edición de un ítem con error vuelve a mostrar el diálogo "Retomar/Descartar"~~ (resuelto, sección 16 #11)**: "Mis publicaciones" ahora navega al wizard con `{ retomar: true }` y el wizard restaura el borrador directo, en el paso guardado, sin preguntar. El diálogo queda solo para "+ Nueva publicación" con un borrador abandonado.
+
+## 16. Correcciones tras la revisión del profesor
+
+El profesor marcó que la publicación (Punto 5) mostraba errores. Una revisión completa de los puntos 5 y 6 encontró los problemas de abajo; todos quedaron corregidos (un commit por ítem en la rama `fix/feature-5-6`) y probados en un celular físico. Las secciones 4.2, 10.2, 10.4, 11, 12, 15.3, 15.6 y 15.8 ya describen el comportamiento nuevo; esta tabla es el resumen.
+
+| # | Punto | Problema | Corrección |
+|---|---|---|---|
+| 1 | 5 | "Retomar publicación" volvía siempre al paso 1: el borrador no guardaba el paso, y cambiar de paso ni siquiera disparaba el autoguardado. | Se guarda el paso por nombre y "Retomar" abre ahí (o en el primer paso incompleto); se verifican las fotos al restaurar; guardado inmediato al ir a segundo plano o salir; no se guarda un wizard vacío (10.4). |
+| 2 | 6 | Tras un error de red, la app quedaba "sin conexión" para siempre si NetInfo no detectaba un cambio de red: la cola nunca se enviaba. | Ping al backend con backoff (10s → 60s) mientras está forzado offline y al volver a primer plano; al responder, se procesa la cola (15.3). |
+| 3 | 5/6 | Una foto borrada del dispositivo hacía fallar la subida "sin respuesta" y la cola la reintentaba infinitamente como si fuera falta de conexión. | Verificación de fotos antes de subir (`FOTO_FALTANTE`): la cola marca el ítem como error, el wizard vuelve al paso de fotos (15.6). |
+| 4 | 6 | Si fallaba la escritura de la cola, el error se ignoraba y se borraba el borrador: la publicación se perdía. | El error se propaga, las fotos vuelven al borrador y se conserva (15.6). |
+| 5 | 5 | Doble toque en "Publicar": dos envíos y un error falso por la restricción única de `clientRequestId`. | Candado con `useRef` (10.2). |
+| 6 | 5 | Textos más largos que la columna de la base → 500. | `maxLength` en el wizard + validación en `PublicacionService.crear` con 400 (4.2). |
+| 7 | 5 | Cámara/galería sin `catch`; permiso de cámara denegado para siempre sin salida. | `try/catch` con aviso y "Abrir configuración" si `canAskAgain` es false. |
+| 8 | 5 | El botón atrás de Android salía del wizard en vez de volver al paso anterior. | Listener `beforeRemove` (10.2). |
+| 9 | 6 | El guardado del progreso de cada foto en la cola no se esperaba y podía volver a meter un ítem ya enviado. | `await` del callback `onFotoSubida` (15.6). |
+| 10 | 6 | Cualquier error que no fuera de red marcaba el ítem como error, también los 5xx. | 4xx → error; 5xx/408/429 → reintento automático con backoff y límite de 5; botón "Reintentar" (15.6). |
+| 11 | 6 | "Editar" una pendiente con error preguntaba "¿Retomar o descartar?". | Navega con `retomar: true` y abre directo (15.6). |
+
+Revisado y sin cambios necesarios: nombres de campos entre app y backend (`CrearPublicacionRequest`, `MiPublicacionResponse`, `PublicationCard`), serialización de `fechaSuceso` (`toISOString()` → `Instant`, sin corrimiento de zona horaria), vencimiento a 30 días (`venceEn = creadaEn + 30d`, job programado + al leer), regla de renovación, idempotencia por `clientRequestId`, caché de detalles y de búsquedas.

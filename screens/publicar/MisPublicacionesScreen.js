@@ -9,8 +9,8 @@ import { colors, radius, spacing } from '../../config/theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useConnectivity } from '../../hooks/useConnectivity';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
-import { descartarItem, listarCola, pasarAEdicion } from '../../services/offline/colaPendientes';
-import { escucharColaProcesada } from '../../services/offline/colaProcesador';
+import { descartarItem, listarCola, pasarAEdicion, reintentarItem } from '../../services/offline/colaPendientes';
+import { escucharColaProcesada, procesarColaPendientes } from '../../services/offline/colaProcesador';
 import { getMisPublicaciones, renovarPublicacion } from '../../services/publicacionesService';
 import { getBarrios } from '../../services/userService';
 
@@ -83,11 +83,30 @@ export default function MisPublicacionesScreen({ navigation }) {
   const editarPendiente = async (item) => {
     setAccionEnCurso(item.clientRequestId);
     try {
-      await pasarAEdicion(user.id, item.clientRequestId);
-      navigation.navigate('PublicarWizard');
+      // retomar:true → el wizard abre directo con estos datos, sin el aviso
+      // "¿Retomar o descartar?". Si pasarAEdicion no encontró el ítem, no se navega.
+      if (await pasarAEdicion(user.id, item.clientRequestId)) {
+        navigation.navigate('PublicarWizard', { retomar: true });
+      }
+    } catch (e) {
+      console.warn('No se pudo pasar la publicación a edición', e);
+      Alert.alert('No se pudo abrir la publicación', 'Intentá de nuevo.');
     } finally {
       setAccionEnCurso(null);
       setCola(await listarCola(user.id));
+    }
+  };
+
+  // Vuelve a encolar un ítem con error y dispara el procesador en el acto (si no hay
+  // conexión, queda 'pendiente' y se manda solo al volver).
+  const reintentarPendiente = async (item) => {
+    setAccionEnCurso(item.clientRequestId);
+    try {
+      await reintentarItem(user.id, item.clientRequestId);
+      setCola(await listarCola(user.id));
+      if (!sinConexion) procesarColaPendientes(user.id).catch(() => {});
+    } finally {
+      setAccionEnCurso(null);
     }
   };
 
@@ -141,6 +160,7 @@ export default function MisPublicacionesScreen({ navigation }) {
               item={fila.item}
               barrios={barrios}
               onEditar={() => editarPendiente(fila.item)}
+              onReintentar={() => reintentarPendiente(fila.item)}
               onDescartar={() => descartarPendiente(fila.item)}
               busy={accionEnCurso === fila.item.clientRequestId}
             />
@@ -173,7 +193,7 @@ export default function MisPublicacionesScreen({ navigation }) {
 // Punto 6 (sección 4.4 del plan): una publicación todavía no enviada. 'pendiente' espera
 // su turno en la cola (sin acciones, se procesa sola); 'error' (un 4xx del backend) ofrece
 // Editar (reabre el wizard con esos datos, vía pasarAEdicion) o Descartar.
-function PendienteCard({ item, barrios, onEditar, onDescartar, busy }) {
+function PendienteCard({ item, barrios, onEditar, onReintentar, onDescartar, busy }) {
   const barrio = barrios.find((b) => b.id === item.borrador.barrioId);
   const foto = item.borrador.fotos?.[0]?.uri;
   const esError = item.estado === 'error';
@@ -195,10 +215,13 @@ function PendienteCard({ item, barrios, onEditar, onDescartar, busy }) {
             <Text style={styles.pendienteChipTexto}>{esError ? 'Error al enviar' : 'Pendiente de envío'}</Text>
           </View>
           {esError && item.mensajeError ? <Text style={styles.pendienteError}>{item.mensajeError}</Text> : null}
+          {/* Pendiente esperando un reintento automático tras un error del servidor. */}
+          {!esError && item.mensajeError ? <Text style={styles.pendienteMeta}>{item.mensajeError}</Text> : null}
         </View>
       </View>
       {esError ? (
         <View style={styles.pendienteBotones}>
+          <Button title="Reintentar" variant="secondary" onPress={onReintentar} loading={busy} />
           <Button title="Editar" variant="secondary" onPress={onEditar} loading={busy} />
           <Button title="Descartar" variant="secondary" onPress={onDescartar} loading={busy} />
         </View>
@@ -247,5 +270,5 @@ const styles = StyleSheet.create({
   pendienteChipError: { backgroundColor: colors.error },
   pendienteChipTexto: { color: colors.white, fontWeight: '600', fontSize: 12 },
   pendienteError: { fontSize: 12, color: colors.error },
-  pendienteBotones: { flexDirection: 'row', gap: spacing.sm },
+  pendienteBotones: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 });
