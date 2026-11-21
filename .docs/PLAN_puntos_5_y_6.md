@@ -349,7 +349,7 @@ Con el backend corriendo y la app contra él (USE_MOCK = false, API_BASE_URL apu
 ## 13. Riesgos y pendientes de definir con el equipo (frontend)
 
 1. Reordenar fotos con botones, no arrastre: se usaron flechas en vez de un drag-and-drop (que exigiría una librería de gestos no vista en clase). Es más lento para reordenar muchas fotos, pero cumple el requisito sin sumar dependencias ajenas al programa de la materia.
-2. "Dirección o referencia exacta" como texto libre: no hay reverse-geocoding (ver riesgo 5 de la sección 7, backend) — la persona tiene que describir el lugar con sus palabras aunque ya haya tocado "Usar mi ubicación actual"; los dos campos no se autocompletan entre sí.
+2. **~~"Dirección o referencia exacta" sin geocoding~~ (resuelto en 14.2)**: "Usar mi ubicación actual" sugiere la dirección con `Location.reverseGeocodeAsync` (editable, y solo si el campo está vacío), y una dirección escrita a mano intenta resolver coordenadas con `Location.geocodeAsync` en segundo plano. Los dos son de mejor esfuerzo (con timeout, sin bloquear el avance): si fallan, la persona completa el campo a mano o el backend usa el centro del barrio para el mapa.
 3. No hay progreso visual de subida de fotos: el botón "Publicar" queda en estado de carga durante toda la subida + alta, pero la persona no ve "foto 2 de 4" mientras tanto. enviarPublicacion ya expone el gancho necesario para agregarlo sin tocar la lógica de envío.
 4. Punto 6 (offline): ya implementado — ver sección 15.
 5. La carpeta del borrador no se limpia si la persona nunca publica ni descarta: si abandona el wizard sin tocar "Descartar" (por ejemplo cierra la app y nunca vuelve a esa sección), el borrador y sus fotos quedan guardados indefinidamente — es el comportamiento que pide la consigna ("al volver encuentra el borrador conservado"), pero vale la pena que el equipo lo tenga presente como posible fuente de espacio ocupado en el dispositivo a largo plazo.
@@ -404,7 +404,7 @@ Toda la persistencia offline vive encapsulada acá, con un criterio estricto: **
 ```text
 services/offline/
   detallesCache.js      # guardarDetalle, obtenerDetalle, eliminarDetalle — LRU de 20
-  resultadosCache.js     # guardarResultados, obtenerUltimosResultados — un solo slot
+  resultadosCache.js     # guardarResultados, obtenerResultadosGuardados — últimas 5 búsquedas
   colaPendientes.js      # listarCola, agregarACola, actualizarItem, quitarDeCola,
                           # descartarItem, pasarAEdicion, reintentarItem — CRUD puro, sin red
   colaProcesador.js      # procesarColaPendientes() — orquesta el envío (sí usa red);
@@ -441,7 +441,15 @@ services/offline/
 
 ### 15.5 Caché de resultados (`services/offline/resultadosCache.js`)
 
-Un solo slot, no una caché por combinación de filtros — coincide con la letra de la consigna ("la app muestra los últimos resultados cargados exitosamente", no "los de esta búsqueda en particular"). `ResultadosScreen` guarda la **primera página** de cada búsqueda exitosa (no las páginas de "cargar más": alcanza con la primera, es más simple y evita tener que fusionar estados de scroll infinito con lo cacheado). Sin conexión, o ante un error de red, se muestra ese último snapshot con un aviso ("Mostrando los últimos resultados guardados — pueden no estar actualizados") y la paginación queda deshabilitada (`mostrandoCache` corta `pedirSiguientePagina`): no tiene sentido pedir "más" de un snapshot fijo. Las fotos de los resultados **no** se bajan a disco (a diferencia del detalle): la consigna solo pide eso para el detalle, y agregarlo acá para el listado completo hubiera sido un alcance no pedido — sin conexión, las miniaturas de `PublicationCard` simplemente no cargan.
+Un slot **por búsqueda**, no uno solo: se guardan las últimas `MAX_BUSQUEDAS_RECIENTES` (5, el mismo tope que las "últimas búsquedas" del buscador), cada una identificada por una clave armada con sus filtros normalizados + el orden (`claveBusqueda`: texto en minúsculas y sin espacios repetidos, coordenadas redondeadas a ~100 m para que dos lecturas de GPS desde el mismo lugar cuenten como la misma búsqueda, fechas solo si el rango es personalizado). Al guardar, la búsqueda pasa al frente de la lista y, si ya estaba, se reemplaza. (Una versión anterior usaba un único slot; su clave vieja se borra al guardar.)
+
+`ResultadosScreen` guarda la **primera página** de cada búsqueda exitosa (`guardarResultados`), no las páginas de "cargar más": alcanza con la primera, es más simple y evita tener que fusionar estados de scroll infinito con lo cacheado. Sin conexión, o ante un error de red, pide `obtenerResultadosGuardados(filtros, orden)`, que devuelve:
+
+- **La misma búsqueda** si está guardada (`coincide: true`): se muestra con el aviso "Mostrando los últimos resultados guardados hace … — pueden no estar actualizados".
+- Si no, **la última búsqueda guardada** (`coincide: false`): se muestra igual, avisando que es de otra búsqueda, con un resumen legible de sus filtros (`resumen`, p. ej. "Perdí · Mascotas · "gato gris" · Palermo · Última semana"; el nombre del barrio se toma de los propios resultados porque sin conexión no se puede pedir `GET /barrios`).
+- `null` si nunca se guardó nada: mensaje de error de "no hay resultados guardados".
+
+Así se cumple la letra de la consigna ("la app muestra los últimos resultados cargados exitosamente") y, cuando se puede, se muestran los de esa búsqueda en particular. Mientras se muestra un caché, la paginación queda deshabilitada (`pedirSiguientePagina` no hace nada si hay `cache`): no tiene sentido pedir "más" de un snapshot fijo. Las fotos de los resultados **no** se bajan a disco (a diferencia del detalle): la consigna solo pide eso para el detalle, y agregarlo acá para el listado completo hubiera sido un alcance no pedido — sin conexión, las miniaturas de `PublicationCard` simplemente no cargan.
 
 ### 15.6 Publicar sin conexión: cola + procesador
 
@@ -497,7 +505,7 @@ Deliberadamente **no** deshabilitadas, porque no necesitan red:
 - [x] `isInternetReachable === null` se trata como "desconocido", no bloquea nada.
 - [x] Un error de red de Axios fuerza `offline` aunque NetInfo no lo haya detectado todavía, y la app sale sola de ese estado cuando el backend vuelve a responder (ping con backoff).
 - [x] Detalle: se cachea con éxito (con fotos a disco), LRU de 20, se muestra cacheado sin conexión con aviso.
-- [x] Resultados: se cachea la última búsqueda exitosa, se muestra sin conexión con aviso, paginación desactivada sobre el caché.
+- [x] Resultados: se cachea la primera página de las últimas 5 búsquedas exitosas (por filtros); sin conexión se muestra la misma búsqueda o, si no está, la última guardada, con aviso; paginación desactivada sobre el caché.
 - [x] Publicar sin conexión: se encola con `clientRequestId`, aparece en Mis publicaciones como "Pendiente de envío".
 - [x] La cola se procesa al iniciar sesión y al reconectar; éxito saca el ítem y borra sus archivos; error de red reintenta al reconectar; 5xx reintenta solo con backoff y un límite de 5 intentos; error 4xx (o foto faltante) marca el ítem y permite reintentarlo, editarlo o descartarlo.
 - [x] Mutex: dos procesamientos no corren a la vez.
@@ -508,11 +516,11 @@ Deliberadamente **no** deshabilitadas, porque no necesitan red:
 ### 15.9 Riesgos y pendientes de definir con el equipo
 
 1. **Caché de resultados sin fotos**: a diferencia del detalle, las miniaturas de `PublicationCard` en resultados cacheados no cargan sin conexión (quedan con su URL remota). Se decidió así porque la consigna solo pide descargar fotos a disco para el detalle (sección 4.2 del TP), no para el listado — bajar fotos de todo un listado paginado hubiera sido un alcance mayor al pedido.
-2. **Un solo slot para resultados**: una nueva búsqueda exitosa pisa el caché de la anterior. Coincide con la letra de la consigna, pero si el equipo quisiera conservar varias búsquedas offline a la vez habría que indexar por filtros (más AsyncStorage, más complejidad) — no se hizo por no pedirse.
+2. **~~Un solo slot para resultados~~ (resuelto)**: el caché ya guarda las últimas 5 búsquedas, indexadas por filtros (ver 15.5). Lo que queda como límite: solo la primera página de cada una, y una búsqueda que no esté entre esas 5 muestra la última guardada (avisando que es otra búsqueda).
 3. **Reintento de la cola es FIFO y se corta en el primer error de red**: si la publicación #1 de 3 falla por red, las #2 y #3 ni se intentan en esa corrida (aunque, por ejemplo, la #2 ya tuviera sus fotos subidas de un intento anterior). Es una simplificación deliberada: en la práctica, si #1 falla por red es porque no hay conexión real, así que #2 y #3 fallarían exactamente igual — procesarlas de todas formas solo agregaría espera.
 4. **`procesando` es una variable de módulo, no persistida**: si la app se cierra a mitad de un `procesarColaPendientes()`, el flag se pierde con el proceso (no hay un `procesando` colgado entre reinicios) — no hace falta persistirlo, el próximo arranque simplemente vuelve a intentar desde cero.
 5. **"Mis publicaciones" sin conexión no actualiza la lista del servidor**: solo muestra la cola (siempre local); la última lista del servidor que se haya visto en memoria se pierde al desmontar la pantalla (no se cachea aparte, a diferencia de resultados/detalle) — no lo pide la consigna para esta pantalla en particular, y hubiera sido una cuarta caché sin pedido explícito.
-6. **Edición de un ítem con error vuelve a mostrar el diálogo "Retomar/Descartar"**: `pasarAEdicion` deja el borrador guardado y navega al wizard, pero el wizard igual pregunta "¿Retomar o empezar de nuevo?" al montar (no distingue "vengo de Editar" de "hay un borrador abandonado") — tocar "Retomar" ahí es la continuación natural, pero es un paso de más que se podría eliminar pasando un parámetro de navegación si se quisiera pulir.
+6. **~~Edición de un ítem con error vuelve a mostrar el diálogo "Retomar/Descartar"~~ (resuelto, sección 16 #11)**: "Mis publicaciones" ahora navega al wizard con `{ retomar: true }` y el wizard restaura el borrador directo, en el paso guardado, sin preguntar. El diálogo queda solo para "+ Nueva publicación" con un borrador abandonado.
 
 ## 16. Correcciones tras la revisión del profesor
 
