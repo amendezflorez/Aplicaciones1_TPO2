@@ -29,6 +29,13 @@
     "plugins": [
       "expo-secure-store",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Necesitamos acceso a tu cámara para escanear el QR y confirmar la entrega.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Permitir que $(PRODUCT_NAME) use Face ID para desbloquear la sesión."
@@ -37,8 +44,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Permitir que $(PRODUCT_NAME) acceda a tus fotos para elegir la foto de perfil.",
-          "cameraPermission": "Permitir que $(PRODUCT_NAME) use la cámara para tomar la foto de perfil."
+          "photosPermission": "Permitir que $(PRODUCT_NAME) acceda a tus fotos para leer un QR o elegir una foto de perfil.",
+          "cameraPermission": "Permitir que $(PRODUCT_NAME) use la cámara para escanear el QR o tomar una foto de perfil."
         }
       ],
       "@react-native-community/datetimepicker",

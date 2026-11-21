@@ -55,6 +55,13 @@ export default function MisReclamosScreen() {
     navigation.navigate('PuntoEncuentro', { reclamoId: reclamo.id });
   };
 
+  const confirmarEntrega = (reclamo) => {
+    navigation.navigate('ConfirmarDevolucion', {
+      publicacionId: reclamo.publicacionId,
+      reclamoId: reclamo.id,
+    });
+  };
+
   return (
     <View style={styles.container}>
       <OfflineBanner />
@@ -90,6 +97,7 @@ export default function MisReclamosScreen() {
             recibido={recibidos}
             onDecision={confirmarDecision}
             onOpenEncuentro={abrirEncuentro}
+            onConfirmarEntrega={confirmarEntrega}
             busy={decisionEnCurso === item.id}
             sinConexion={sinConexion}
           />

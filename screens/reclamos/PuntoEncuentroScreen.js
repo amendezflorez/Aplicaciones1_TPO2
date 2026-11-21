@@ -28,6 +28,7 @@ export default function PuntoEncuentroScreen({ route }) {
     proponerUbicacion,
     aceptarUbicacion,
   } = useReclamos();
+  const reclamo = reclamos.find((item) => item.id === reclamoId);
   const [direccion, setDireccion] = useState('');
   const [referencia, setReferencia] = useState('');
   const [cargando, setCargando] = useState(!encuentros[reclamoId]);
@@ -38,6 +39,10 @@ export default function PuntoEncuentroScreen({ route }) {
     useCallback(() => {
       let activa = true;
       const actualizar = async () => {
+        if (reclamo?.publicacionEstado === 'resuelta') {
+          setCargando(false);
+          return;
+        }
         try {
           await cargarEncuentro(reclamoId);
           if (activa) setError('');
@@ -54,10 +59,9 @@ export default function PuntoEncuentroScreen({ route }) {
         activa = false;
         clearInterval(intervalo);
       };
-    }, [cargarEncuentro, reclamoId])
+    }, [cargarEncuentro, reclamo?.publicacionEstado, reclamoId])
   );
 
-  const reclamo = reclamos.find((item) => item.id === reclamoId);
   const encuentro = encuentros[reclamoId];
   const propuesta = encuentro?.propuestaActual;
   const titularId = reclamo?.tipo === 'lo_encontre' ? reclamo.autorId : reclamo?.publicadorId;
@@ -123,6 +127,19 @@ export default function PuntoEncuentroScreen({ route }) {
       <View style={styles.centered}>
         <Text style={styles.title}>La devolución todavía no está habilitada</Text>
         <Text style={styles.body}>El reclamo debe estar aceptado para coordinar un encuentro.</Text>
+      </View>
+    );
+  }
+
+  if (reclamo.publicacionEstado === 'resuelta') {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.title}>La entrega ya fue confirmada</Text>
+        <Text style={styles.body}>
+          La publicación quedó resuelta{reclamo.fechaResolucion
+            ? ` el ${new Date(reclamo.fechaResolucion).toLocaleString()}`
+            : ''}.
+        </Text>
       </View>
     );
   }

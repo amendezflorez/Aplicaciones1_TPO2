@@ -3,6 +3,7 @@ package com.hallado.backend.dto.response;
 import java.time.Instant;
 
 import com.hallado.backend.entity.EstadoReclamo;
+import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.TipoReclamo;
 
 public record ReclamoBandejaResponse(
@@ -22,5 +23,7 @@ public record ReclamoBandejaResponse(
         BarrioResponse barrioEncontrado,
         EstadoReclamo estado,
         Instant creadaEn,
-        Instant venceEn) {
+        Instant venceEn,
+        EstadoPublicacion publicacionEstado,
+        Instant fechaResolucion) {
 }

@@ -11,12 +11,23 @@ const ESTADOS = {
   vencido: 'Vencido',
 };
 
-export default function ReclamoCard({ reclamo, recibido, onDecision, onOpenEncuentro, busy, sinConexion }) {
+export default function ReclamoCard({
+  reclamo,
+  recibido,
+  onDecision,
+  onOpenEncuentro,
+  onConfirmarEntrega,
+  busy,
+  sinConexion,
+}) {
   const persona = recibido
     ? { name: reclamo.autorNombre, photoUrl: reclamo.autorFotoUrl }
     : { name: reclamo.publicadorNombre, photoUrl: reclamo.publicadorFotoUrl };
   const tipo = reclamo.tipo === 'es_mio' ? 'Es mío' : 'Lo encontré';
   const vence = reclamo.venceEn ? new Date(reclamo.venceEn).toLocaleString() : null;
+  const esReceptor = reclamo.tipo === 'es_mio' ? !recibido : recibido;
+  const entregaConfirmada = reclamo.estado === 'aceptado'
+    && reclamo.publicacionEstado === 'resuelta';
 
   return (
     <View style={styles.card}>
@@ -68,8 +79,20 @@ export default function ReclamoCard({ reclamo, recibido, onDecision, onOpenEncue
           </View>
         </>
       ) : null}
-      {reclamo.estado === 'aceptado' ? (
+      {entregaConfirmada ? (
+        <Text style={styles.resolved}>
+          Entrega confirmada{reclamo.fechaResolucion ? ` el ${new Date(reclamo.fechaResolucion).toLocaleString()}` : ''}.
+        </Text>
+      ) : null}
+      {reclamo.estado === 'aceptado' && !entregaConfirmada ? (
         <Button title="Coordinar devolución" variant="secondary" onPress={() => onOpenEncuentro(reclamo)} />
+      ) : null}
+      {reclamo.estado === 'aceptado' && !entregaConfirmada && esReceptor ? (
+        <Button
+          title="Confirmar entrega con QR"
+          onPress={() => onConfirmarEntrega(reclamo)}
+          disabled={sinConexion}
+        />
       ) : null}
     </View>
   );
@@ -86,6 +109,7 @@ const styles = StyleSheet.create({
   status_aceptado: { color: '#166534', backgroundColor: '#DCFCE7' },
   status_rechazado: { color: '#991B1B', backgroundColor: '#FEE2E2' },
   status_vencido: { color: colors.textMuted, backgroundColor: colors.surface },
+  resolved: { color: colors.success, fontSize: 14, fontWeight: '600', lineHeight: 20 },
   person: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   personName: { flex: 1, color: colors.text, fontSize: 14 },
   body: { color: colors.text, fontSize: 14, lineHeight: 20 },
