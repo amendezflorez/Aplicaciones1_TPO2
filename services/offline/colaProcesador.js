@@ -25,6 +25,30 @@ let procesando = false;
 // se corre al terminar la actual.
 let siguienteUserId = null;
 
+// Reintentos ante errores del servidor (Punto 6). Los errores de RED no cuentan acá: sin
+// conexión no tiene sentido gastar intentos, y el reintento ya lo dispara la vuelta de la
+// conexión (ConnectivityContext → transición offline→online → AuthContext). Solo los 5xx /
+// 408 / 429, que pasan CON conexión, necesitan su propio temporizador.
+const MAX_INTENTOS_SERVIDOR = 5;
+const BACKOFF_BASE_MS = 30000;
+const BACKOFF_MAX_MS = 10 * 60000;
+const esReintentable = (status) => status >= 500 || status === 408 || status === 429;
+const esperaParaIntento = (intentos) => Math.min(BACKOFF_BASE_MS * 2 ** (intentos - 1), BACKOFF_MAX_MS);
+let timerReintento = null;
+
+// Después de cada corrida: si quedó algún pendiente esperando su backoff, agenda UNA
+// nueva corrida para cuando le toque al más próximo (nunca más de un temporizador a la
+// vez: procesarColaPendientes limpia el anterior al empezar).
+async function programarReintento(userId) {
+  const cola = await listarCola(userId);
+  const proximos = cola
+    .filter((item) => item.estado === 'pendiente' && item.proximoIntentoEn)
+    .map((item) => item.proximoIntentoEn);
+  if (proximos.length === 0) return;
+  const espera = Math.max(Math.min(...proximos) - Date.now(), 1000);
+  timerReintento = setTimeout(() => procesarColaPendientes(userId), espera);
+}
+
 // Error interno: la sesión vigente ya no es la del dueño de la cola.
 const SESION_CAMBIADA = 'SESION_CAMBIADA';
 async function verificarSesionDe(userId) {
@@ -63,8 +87,10 @@ export async function procesarColaPendientes(userId) {
     return;
   }
   procesando = true;
+  clearTimeout(timerReintento);
   try {
     await procesar(userId);
+    await programarReintento(userId);
   } finally {
     procesando = false;
   }
@@ -84,6 +110,8 @@ async function procesar(userId) {
     // tanto).
     const actual = await obtenerItem(userId, item.clientRequestId);
     if (!actual || actual.estado !== 'pendiente') continue;
+    // En espera por backoff tras un error del servidor: todavía no le toca.
+    if (actual.proximoIntentoEn && actual.proximoIntentoEn > Date.now()) continue;
 
     // Copia local acumulativa: cada onFotoSubida parte de la anterior. Antes cada una
     // partía de `actual.borrador` original, así que la foto 2 pisaba la url guardada de
@@ -138,8 +166,34 @@ async function procesar(userId) {
         );
         break;
       }
-      // Error 4xx (o cualquier otro que no sea de red ni 401): se marca con error en vez
-      // de reintentar sola — "Mis publicaciones" ofrece editarla o descartarla.
+      // Error del servidor (5xx) o transitorio (408 timeout, 429 demasiadas requests): no
+      // es culpa de la publicación, así que se reintenta sola con backoff exponencial
+      // (30s, 1m, 2m, 4m). Si sigue fallando después de MAX_INTENTOS_SERVIDOR intentos,
+      // pasa a 'error' para no reintentar infinito: la persona la ve en Mis
+      // publicaciones y puede tocar "Reintentar", editarla o descartarla. Se sigue con el
+      // resto de la cola (continue, no break): otro ítem puede andar bien.
+      const status = e.response?.status;
+      if (esReintentable(status)) {
+        const intentos = (actual.intentos ?? 0) + 1;
+        if (intentos >= MAX_INTENTOS_SERVIDOR) {
+          await actualizarItem(userId, actual.clientRequestId, {
+            estado: 'error',
+            intentos,
+            proximoIntentoEn: null,
+            mensajeError: `${getErrorMessage(e)} Lo intentamos ${intentos} veces sin éxito.`,
+          });
+        } else {
+          await actualizarItem(userId, actual.clientRequestId, {
+            intentos,
+            proximoIntentoEn: Date.now() + esperaParaIntento(intentos),
+            mensajeError: 'El servidor no pudo recibirla todavía. La vamos a reintentar automáticamente.',
+          });
+        }
+        avisarCambio(userId);
+        continue;
+      }
+      // Error 4xx (validación del backend sobre ESTA publicación): reintentar no lo
+      // arregla, se marca con error — "Mis publicaciones" ofrece editarla o descartarla.
       await actualizarItem(userId, actual.clientRequestId, {
         estado: 'error',
         mensajeError: getErrorMessage(e),

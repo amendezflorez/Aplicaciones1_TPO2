@@ -144,6 +144,17 @@ export async function quitarDeCola(userId, clientRequestId) {
   if (borrador?.clientRequestId === clientRequestId) await borrarRegistroBorrador(userId);
 }
 
+// "Reintentar" desde Mis publicaciones (un ítem en estado 'error'): vuelve a 'pendiente'
+// con el contador de reintentos en cero, para que el procesador lo mande de nuevo.
+export async function reintentarItem(userId, clientRequestId) {
+  await actualizarItem(userId, clientRequestId, {
+    estado: 'pendiente',
+    mensajeError: null,
+    intentos: 0,
+    proximoIntentoEn: null,
+  });
+}
+
 // "Descartar" desde Mis publicaciones (un ítem en estado 'error'): mismo efecto que
 // quitarDeCola, nombre aparte para que el llamador sea explícito sobre la intención.
 export const descartarItem = quitarDeCola;
