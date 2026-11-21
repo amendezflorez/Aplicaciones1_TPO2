@@ -45,6 +45,13 @@ public class PublicacionService {
     private static final int MAX_PAGE_SIZE = 50;
     private static final int DIAS_VIGENCIA = 30;
     private static final Duration VENTANA_RENOVACION_ANTICIPADA = Duration.ofDays(5);
+    // Largos máximos del alta (Punto 5). Mismos valores que MAX_LARGO en
+    // PublicarWizardScreen.js; todos entran en su columna (255, descripción 4000).
+    private static final int MAX_TITULO = 120;
+    private static final int MAX_DESCRIPCION = 2000;
+    private static final int MAX_DIRECCION = 255;
+    private static final int MAX_PREGUNTA = 200;
+    private static final int MAX_RESPUESTA = 100;
     // ~150 m, mismo orden de magnitud que el offset fijo que usaba DataSeeder antes del
     // Punto 5: suficiente para no revelar el punto exacto en el mapa de resultados sin
     // alejarse del barrio real.
@@ -184,6 +191,14 @@ public class PublicacionService {
         if (body.categoria() == null || body.categoria().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "La categoría es obligatoria.");
         }
+        // Largos máximos (los mismos que limita el wizard con maxLength): sin esto, un texto
+        // más largo que la columna en la base (255 por defecto) hacía fallar el INSERT y la
+        // app recibía un 500 genérico en vez de un 400 con un mensaje claro.
+        validarLargo(body.titulo(), MAX_TITULO, "El título");
+        validarLargo(body.descripcion(), MAX_DESCRIPCION, "La descripción");
+        validarLargo(body.direccionExacta(), MAX_DIRECCION, "La dirección");
+        validarLargo(body.preguntaVerificacion(), MAX_PREGUNTA, "La pregunta de verificación");
+        validarLargo(body.respuestaVerificacion(), MAX_RESPUESTA, "La respuesta de verificación");
         Categoria categoria = Categoria.fromJson(body.categoria());
 
         if (body.fechaSuceso() == null) {
@@ -295,6 +310,13 @@ public class PublicacionService {
         fotoPublicacionRepository.saveAll(fotos);
 
         return new CrearPublicacionResultado(publicacionMapper.toDetalle(publicacion, userId), true);
+    }
+
+    private static void validarLargo(String valor, int maximo, String campo) {
+        if (valor != null && valor.trim().length() > maximo) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, campo + " no puede tener más de " + maximo + " caracteres.");
+        }
     }
 
     public record CrearPublicacionResultado(PublicacionDetalleResponse publicacion, boolean creada) {

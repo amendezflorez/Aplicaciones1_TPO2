@@ -38,6 +38,16 @@ const PICKER_OPTIONS_FOTO = { mediaTypes: ['images'], quality: 0.7 };
 // usa el mismo tipo de proveedor del sistema y puede quedar colgado en el mismo emulador
 // sin Google Play Services.
 const TIMEOUT_GEOCODING_MS = 8000;
+// Largos máximos: los mismos que valida el backend (PublicacionService.crear), que a su vez
+// respetan el tamaño de las columnas en la base. Sin esto, un título de más de 255
+// caracteres llegaba a la base y el backend respondía 500 en vez de un error claro.
+const MAX_LARGO = {
+  titulo: 120,
+  descripcion: 2000,
+  direccionExacta: 255,
+  preguntaVerificacion: 200,
+  respuestaVerificacion: 100,
+};
 const ETIQUETAS_PASO = {
   tipo: '¿Qué querés publicar?',
   fotos: 'Fotos',
@@ -714,13 +724,20 @@ export default function PublicarWizardScreen({ route, navigation }) {
 
       {paso === 'detalles' ? (
         <View style={styles.paso}>
-          <TextField label="Título" value={titulo} onChangeText={setTitulo} error={errores.titulo} />
+          <TextField
+            label="Título"
+            value={titulo}
+            onChangeText={setTitulo}
+            error={errores.titulo}
+            maxLength={MAX_LARGO.titulo}
+          />
           <TextField
             label="Descripción"
             value={descripcion}
             onChangeText={setDescripcion}
             error={errores.descripcion}
             multiline
+            maxLength={MAX_LARGO.descripcion}
           />
           <View>
             <Text style={styles.label}>Categoría</Text>
@@ -779,6 +796,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
             value={direccionExacta}
             onChangeText={setDireccionExacta}
             multiline
+            maxLength={MAX_LARGO.direccionExacta}
           />
           {/* A diferencia de BarrioOUbicacionPicker (buscador, donde barrio y ubicación son
              excluyentes), acá los dos campos conviven: el barrio ubica la publicación en el
@@ -820,12 +838,14 @@ export default function PublicarWizardScreen({ route, navigation }) {
             value={preguntaVerificacion}
             onChangeText={setPreguntaVerificacion}
             error={errores.pregunta}
+            maxLength={MAX_LARGO.preguntaVerificacion}
           />
           <TextField
             label="Respuesta correcta"
             value={respuestaVerificacion}
             onChangeText={setRespuestaVerificacion}
             error={errores.respuesta}
+            maxLength={MAX_LARGO.respuestaVerificacion}
           />
           <Text style={styles.ayudaPrivada}>🔒 La respuesta es privada: nunca se le muestra a nadie, ni siquiera a quien reclama.</Text>
         </View>
