@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, Image, Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -452,26 +452,54 @@ export default function PublicarWizardScreen({ route, navigation }) {
     }
   };
 
+  // Antes estas llamadas no tenían catch: si el picker o la cámara fallaban (p. ej. no hay
+  // app de cámara, o el sistema mata la actividad) quedaba una promesa rechazada sin
+  // manejar y la persona no se enteraba de nada.
   const elegirDeGaleria = async () => {
     const restantes = MAX_FOTOS_PUBLICACION - fotos.length;
     if (restantes <= 0) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      ...PICKER_OPTIONS_FOTO,
-      allowsMultipleSelection: true,
-      selectionLimit: restantes,
-    });
-    if (!result.canceled) await agregarFotos(result.assets ?? []);
+    try {
+      // Sin pedir permiso de galería a propósito: en Android el selector de fotos del
+      // sistema no lo necesita.
+      const result = await ImagePicker.launchImageLibraryAsync({
+        ...PICKER_OPTIONS_FOTO,
+        allowsMultipleSelection: true,
+        // Recorta igual por si el dispositivo ignora selectionLimit: nunca más de 5.
+        selectionLimit: restantes,
+      });
+      if (!result.canceled) await agregarFotos((result.assets ?? []).slice(0, restantes));
+    } catch (e) {
+      console.warn('No se pudo abrir la galería', e);
+      Alert.alert('No se pudo abrir la galería', 'Intentá de nuevo.');
+    }
   };
 
   const tomarFoto = async () => {
     if (fotos.length >= MAX_FOTOS_PUBLICACION) return;
-    const permiso = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permiso.granted) {
-      Alert.alert('Permiso necesario', 'Habilitá el acceso a la cámara para tomar la foto.');
-      return;
+    try {
+      const permiso = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permiso.granted) {
+        // canAskAgain=false: la persona lo negó "para siempre" y el sistema ya no muestra
+        // el diálogo; la única forma de habilitarlo es desde la configuración del
+        // dispositivo (mismo criterio que el permiso de ubicación en el paso "Dónde").
+        Alert.alert(
+          'Permiso necesario',
+          'Habilitá el acceso a la cámara para tomar la foto. También podés elegirla desde la galería.',
+          permiso.canAskAgain
+            ? [{ text: 'OK' }]
+            : [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Abrir configuración', onPress: () => Linking.openSettings() },
+              ]
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync(PICKER_OPTIONS_FOTO);
+      if (!result.canceled) await agregarFotos(result.assets ?? []);
+    } catch (e) {
+      console.warn('No se pudo usar la cámara', e);
+      Alert.alert('No se pudo abrir la cámara', 'Intentá de nuevo o elegí la foto desde la galería.');
     }
-    const result = await ImagePicker.launchCameraAsync(PICKER_OPTIONS_FOTO);
-    if (!result.canceled) await agregarFotos(result.assets ?? []);
   };
 
   const moverFoto = (index, delta) => {
@@ -830,7 +858,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
       {paso === 'verificacion' ? (
         <View style={styles.paso}>
           <Text style={styles.ayuda}>
-            Cargá una pregunta sobre un detalle que NO se vea en las fotos (ej. "¿De qué color es el forro?") y su
+            Cargá una pregunta sobre un detalle que NO se vea en las fotos (ej. “¿De qué color es el forro?”) y su
             respuesta. Así podés confirmar que quien reclama de verdad es el dueño.
           </Text>
           <TextField
