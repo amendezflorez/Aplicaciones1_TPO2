@@ -1,6 +1,6 @@
 import { getUserIdFromToken } from '../../utils/jwt';
 import { esErrorDeRed, getErrorMessage } from '../errors';
-import { enviarPublicacion } from '../publicarPublicacion';
+import { enviarPublicacion, FOTO_FALTANTE } from '../publicarPublicacion';
 import { getToken } from '../storage';
 import { actualizarItem, listarCola, obtenerItem, quitarDeCola } from './colaPendientes';
 
@@ -113,6 +113,14 @@ async function procesar(userId) {
       // Cambió la sesión a mitad de la corrida (logout de este usuario, o entró otro):
       // se corta sin tocar el ítem — queda 'pendiente' para cuando su dueño vuelva.
       if (e.code === SESION_CAMBIADA) break;
+      // Foto borrada del dispositivo: no es un problema de red, reintentar no lo arregla.
+      // Se marca 'error' para que la persona la edite (vuelva a agregar la foto) o la
+      // descarte desde Mis publicaciones.
+      if (e.code === FOTO_FALTANTE) {
+        await actualizarItem(userId, actual.clientRequestId, { estado: 'error', mensajeError: e.message });
+        avisarCambio(userId);
+        continue;
+      }
       if (esErrorDeRed(e) || sesionVencida) {
         // Sin conexión real, se cortó a mitad de camino, o se venció la sesión: en los
         // tres casos no tiene sentido seguir con el resto de la cola en esta corrida

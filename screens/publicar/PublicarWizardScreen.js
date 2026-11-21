@@ -21,12 +21,13 @@ import {
   cargarBorrador,
   copiarFotoAlBorrador,
   eliminarArchivoBorrador,
+  existeArchivo,
   guardarBorrador,
   restaurarFotosDelBorrador,
 } from '../../services/borradorPublicacionStorage';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
 import { agregarACola, obtenerItem } from '../../services/offline/colaPendientes';
-import { enviarPublicacion } from '../../services/publicarPublicacion';
+import { enviarPublicacion, FOTO_FALTANTE } from '../../services/publicarPublicacion';
 import { getBarrios } from '../../services/userService';
 import { formatDireccionGeocodificada } from '../../utils/publicacionFormatters';
 import { conTimeout } from '../../utils/promesaConTimeout';
@@ -585,6 +586,14 @@ export default function PublicarWizardScreen({ route, navigation }) {
         { text: 'Ver mis publicaciones', onPress: () => navigation.navigate('MisPublicaciones') },
       ]);
     } catch (e) {
+      // Una foto ya no existe en el dispositivo: se sacan las que faltan y se vuelve al
+      // paso de fotos (no es un error de red, encolarla no serviría de nada).
+      if (e.code === FOTO_FALTANTE) {
+        setFotos((actuales) => actuales.filter((f) => f.url || existeArchivo(f.uri)));
+        setIndice(pasos.indexOf('fotos'));
+        Alert.alert('Falta una foto', e.message);
+        return;
+      }
       // NetInfo pudo no haber avisado todavía (o el problema es que el propio backend es
       // inalcanzable, no la red del dispositivo): si la request falló sin respuesta,
       // tratamos esto como offline igual, aunque sinConexion dijera que sí había conexión.

@@ -118,6 +118,14 @@ export async function restaurarFotosDelBorrador(fotos = [], clientRequestId) {
   return { fotos: restauradas, perdidas };
 }
 
+export function existeArchivo(uri) {
+  try {
+    return Boolean(uri) && new File(uri).exists;
+  } catch {
+    return false;
+  }
+}
+
 // Al eliminar una foto del wizard (botón "✕" en el paso de fotos) borramos también su
 // archivo persistido, para no dejar basura acumulándose en el directorio entre ediciones.
 export function eliminarArchivoBorrador(uri) {
