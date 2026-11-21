@@ -94,9 +94,13 @@ async function procesar(userId) {
         // Mismo mecanismo que el wizard online: persiste qué fotos ya se subieron
         // antes de seguir con la próxima, para no resubirlas si este intento falla a
         // mitad de camino.
-        onFotoSubida: (foto, url) => {
+        //
+        // Esperado (await), no "fire and forget": actualizarItem lee la cola, la modifica
+        // y la vuelve a escribir. Sin esperar, esa escritura podía terminar DESPUÉS de
+        // quitarDeCola y volver a meter en la cola un ítem ya enviado.
+        onFotoSubida: async (foto, url) => {
           borrador = { ...borrador, fotos: borrador.fotos.map((f) => (f.uri === foto.uri ? { ...f, url } : f)) };
-          actualizarItem(userId, actual.clientRequestId, { borrador });
+          await actualizarItem(userId, actual.clientRequestId, { borrador });
         },
         antesDeCadaRequest: () => verificarSesionDe(userId),
       });

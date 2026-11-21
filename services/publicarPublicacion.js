@@ -51,7 +51,10 @@ export async function enviarPublicacion(borrador, callbacks = {}) {
     await antesDeCadaRequest?.();
     const { photoUrl } = await subirFotoPublicacion(foto.uri);
     fotos.push(photoUrl);
-    onFotoSubida?.(foto, photoUrl);
+    // await: si el callback es async (la cola offline persiste en AsyncStorage), se espera
+    // a que termine antes de seguir, para que esa escritura no quede "volando" y pise algo
+    // escrito después (ver colaProcesador).
+    await onFotoSubida?.(foto, photoUrl);
   }
 
   const esEncontrado = borrador.tipo === 'encontrado';
