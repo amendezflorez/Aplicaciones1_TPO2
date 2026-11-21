@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -22,6 +22,7 @@ import {
   copiarFotoAlBorrador,
   eliminarArchivoBorrador,
   guardarBorrador,
+  restaurarFotosDelBorrador,
 } from '../../services/borradorPublicacionStorage';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
 import { agregarACola, obtenerItem } from '../../services/offline/colaPendientes';
@@ -58,6 +59,65 @@ const ETIQUETAS_CAMPOS = {
   pregunta: 'la pregunta de verificación',
   respuesta: 'la respuesta de verificación',
 };
+
+// Lista de pasos según el tipo: "Verificación" solo existe si tipo=encontrado (la
+// pregunta/respuesta están prohibidas para tipo=perdido en el backend). Fuera del
+// componente para poder usarla también al restaurar un borrador, antes de que el estado
+// de React tenga los datos cargados.
+const pasosPara = (tipo) => {
+  const base = ['tipo', 'fotos', 'detalles', 'ubicacion'];
+  if (tipo === 'encontrado') base.push('verificacion');
+  base.push('resumen');
+  return base;
+};
+
+// Validación pura de un paso a partir de los datos (no del estado de React): la usa el
+// render (habilitar "Siguiente"), el botón "Siguiente" y la restauración del borrador
+// (para no dejar a la persona en un paso posterior a uno que quedó incompleto, p. ej. si
+// se perdió una foto). `d.fechaSuceso` es un Date.
+function erroresDe(p, d) {
+  const found = {};
+  if (p === 'tipo' && !d.tipo) {
+    found.tipo = 'Elegí qué querés publicar.';
+  }
+  if (p === 'fotos' && d.fotos.length === 0) {
+    found.fotos = 'Agregá al menos una foto.';
+  }
+  if (p === 'detalles') {
+    if (!d.titulo.trim()) found.titulo = 'El título es obligatorio.';
+    if (!d.descripcion.trim()) found.descripcion = 'La descripción es obligatoria.';
+    if (!d.categoria) found.categoria = 'Elegí una categoría.';
+    if (d.fechaSuceso > new Date()) found.fecha = 'La fecha no puede ser futura.';
+  }
+  if (p === 'ubicacion') {
+    if (!d.barrioId) found.barrio = 'Elegí el barrio.';
+    // "ya sea escribiéndola o tomando la ubicación actual" (consigna del TP): alcanza
+    // con una de las dos, no hace falta exigir las dos.
+    const tieneDireccion = Boolean(d.direccionExacta.trim());
+    const tieneCoordenadas = d.latExacta != null && d.lngExacta != null;
+    if (!tieneDireccion && !tieneCoordenadas) {
+      found.ubicacion = 'Escribí la dirección exacta o usá tu ubicación actual.';
+    }
+  }
+  if (p === 'verificacion') {
+    if (!d.preguntaVerificacion.trim()) found.pregunta = 'Cargá una pregunta de verificación.';
+    if (!d.respuestaVerificacion.trim()) found.respuesta = 'Cargá la respuesta correcta.';
+  }
+  return found;
+}
+
+// Índice del paso donde retomar un borrador: el paso guardado (`guardado.paso`, por
+// NOMBRE y no por número, porque la cantidad de pasos cambia según el tipo), salvo que un
+// paso anterior haya quedado incompleto — ahí se frena en el primero incompleto. Un
+// borrador viejo (de antes de guardar el paso) o con un paso que ya no existe para ese
+// tipo cae directo en el primer paso incompleto: nunca rompe, en el peor caso es el 0.
+function indiceParaRetomar(pasoGuardado, datos) {
+  const pasos = pasosPara(datos.tipo);
+  const primerIncompleto = pasos.findIndex((p) => Object.keys(erroresDe(p, datos)).length > 0);
+  const tope = primerIncompleto === -1 ? pasos.length - 1 : primerIncompleto;
+  const guardado = pasos.indexOf(pasoGuardado);
+  return guardado === -1 ? tope : Math.min(guardado, tope);
+}
 
 // Wizard de carga guiada del Punto 5 (sección 4 de PLAN_puntos_5_y_6.md). Una sola
 // pantalla con pasos internos vía useState, mismo espíritu que BuscadorInicialScreen (acá
@@ -105,12 +165,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
   const terminadoRef = useRef(false);
   const [errorEnvio, setErrorEnvio] = useState('');
 
-  const pasos = useMemo(() => {
-    const base = ['tipo', 'fotos', 'detalles', 'ubicacion'];
-    if (tipo === 'encontrado') base.push('verificacion');
-    base.push('resumen');
-    return base;
-  }, [tipo]);
+  const pasos = useMemo(() => pasosPara(tipo), [tipo]);
   const paso = pasos[Math.min(indice, pasos.length - 1)];
 
   useEffect(() => {
@@ -132,24 +187,56 @@ export default function PublicarWizardScreen({ route, navigation }) {
       if (params.barrioId) setBarrioId(params.barrioId);
       setClientRequestId(generarIdLocal());
     };
-    const aplicarBorrador = (guardado) => {
-      setTipo(guardado.tipo ?? null);
-      setFotos(guardado.fotos ?? []);
-      setTitulo(guardado.titulo ?? '');
-      setDescripcion(guardado.descripcion ?? '');
-      setCategoria(guardado.categoria ?? null);
-      setFechaSuceso(guardado.fechaSuceso ? new Date(guardado.fechaSuceso) : new Date());
-      setFranjaHoraria(guardado.franjaHoraria ?? null);
-      setBarrioId(guardado.barrioId ?? null);
-      setDireccionExacta(guardado.direccionExacta ?? '');
-      setLatExacta(guardado.latExacta ?? null);
-      setLngExacta(guardado.lngExacta ?? null);
-      setPreguntaVerificacion(guardado.preguntaVerificacion ?? '');
-      setRespuestaVerificacion(guardado.respuestaVerificacion ?? '');
+    // Restaura TODO el estado del borrador, incluido el paso donde había quedado. Antes el
+    // paso no se guardaba y "Retomar" siempre volvía al paso 1 (perdí/encontré) con los
+    // datos cargados: la consigna pide retomarlo donde se dejó.
+    const aplicarBorrador = async (guardado) => {
       // Reusa el mismo clientRequestId del borrador: si ese intento ya había llegado a
       // crear la publicación en el backend pero la respuesta no volvió, publicar de
       // nuevo con el mismo id no duplica (sección 4.1 del plan).
-      setClientRequestId(guardado.clientRequestId ?? generarIdLocal());
+      const idRestaurado = guardado.clientRequestId ?? generarIdLocal();
+      const { fotos: fotosRestauradas, perdidas } = await restaurarFotosDelBorrador(guardado.fotos, idRestaurado);
+      const fecha = guardado.fechaSuceso ? new Date(guardado.fechaSuceso) : new Date();
+      const datos = {
+        tipo: guardado.tipo ?? null,
+        fotos: fotosRestauradas,
+        titulo: guardado.titulo ?? '',
+        descripcion: guardado.descripcion ?? '',
+        categoria: guardado.categoria ?? null,
+        // Una fecha corrupta en el JSON daría "Invalid Date" y rompería toISOString().
+        fechaSuceso: Number.isNaN(fecha.getTime()) ? new Date() : fecha,
+        franjaHoraria: guardado.franjaHoraria ?? null,
+        barrioId: guardado.barrioId ?? null,
+        direccionExacta: guardado.direccionExacta ?? '',
+        latExacta: guardado.latExacta ?? null,
+        lngExacta: guardado.lngExacta ?? null,
+        preguntaVerificacion: guardado.preguntaVerificacion ?? '',
+        respuestaVerificacion: guardado.respuestaVerificacion ?? '',
+      };
+      if (!vigente) return;
+      setTipo(datos.tipo);
+      setFotos(datos.fotos);
+      setTitulo(datos.titulo);
+      setDescripcion(datos.descripcion);
+      setCategoria(datos.categoria);
+      setFechaSuceso(datos.fechaSuceso);
+      setFranjaHoraria(datos.franjaHoraria);
+      setBarrioId(datos.barrioId);
+      setDireccionExacta(datos.direccionExacta);
+      setLatExacta(datos.latExacta);
+      setLngExacta(datos.lngExacta);
+      setPreguntaVerificacion(datos.preguntaVerificacion);
+      setRespuestaVerificacion(datos.respuestaVerificacion);
+      setClientRequestId(idRestaurado);
+      setIndice(indiceParaRetomar(guardado.paso, datos));
+      if (perdidas > 0) {
+        Alert.alert(
+          'Faltan fotos',
+          perdidas === 1
+            ? 'Una de las fotos del borrador ya no está disponible en el dispositivo. Volvé a agregarla.'
+            : `${perdidas} fotos del borrador ya no están disponibles en el dispositivo. Volvé a agregarlas.`
+        );
+      }
     };
 
     cargarBorrador(user.id).then((guardado) => {
@@ -181,9 +268,16 @@ export default function PublicarWizardScreen({ route, navigation }) {
             },
             {
               text: 'Retomar',
-              onPress: () => {
-                aplicarBorrador(guardado);
-                setListo(true);
+              onPress: async () => {
+                try {
+                  await aplicarBorrador(guardado);
+                } catch (e) {
+                  // Nunca dejar la pantalla colgada en <Loading />: si algo del borrador
+                  // no se pudo restaurar, se arranca de cero con el prefill.
+                  console.warn('No se pudo restaurar el borrador', e);
+                  if (vigente) iniciarDesdeParams();
+                }
+                if (vigente) setListo(true);
               },
             },
           ],
@@ -204,6 +298,9 @@ export default function PublicarWizardScreen({ route, navigation }) {
   }, []);
 
   const construirBorrador = () => ({
+    // Por nombre ('detalles', 'ubicacion'...), no por número: la cantidad de pasos cambia
+    // según el tipo (ver pasosPara), así que el índice solo no alcanza para ubicarse.
+    paso,
     tipo,
     fotos,
     titulo: titulo.trim(),
@@ -225,15 +322,29 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // tipeada en título/descripción. No corre hasta que `listo` (ya se resolvió si había que
   // retomar/descartar), para no pisar un borrador existente con el estado inicial vacío
   // mientras todavía se está preguntando.
+  //
+  // guardarAhoraRef siempre apunta a una función con el estado del ÚLTIMO render, para
+  // poder llamarla desde listeners que se registran una sola vez (AppState, desmontaje).
+  // No guarda un wizard "vacío" (todavía en el paso 1 y sin fotos): si no, con solo abrir
+  // y cerrar el wizard aparecía después el aviso "Publicación sin terminar".
+  const guardarAhoraRef = useRef(() => {});
+  // Efecto sin dependencias = corre después de cada render (React no permite escribir una
+  // ref durante el render mismo).
+  useEffect(() => {
+    guardarAhoraRef.current = () => {
+      if (!listo || terminadoRef.current || !clientRequestId) return;
+      if (indice === 0 && fotos.length === 0) return;
+      guardarBorrador(user.id, construirBorrador());
+    };
+  });
+
   useEffect(() => {
     if (!listo) return undefined;
-    const id = setTimeout(() => {
-      if (!terminadoRef.current) guardarBorrador(user.id, construirBorrador());
-    }, 600);
+    const id = setTimeout(() => guardarAhoraRef.current(), 600);
     return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     listo,
+    paso, // cambiar de paso también es progreso a guardar (antes no disparaba guardado)
     tipo,
     fotos,
     titulo,
@@ -248,6 +359,19 @@ export default function PublicarWizardScreen({ route, navigation }) {
     preguntaVerificacion,
     respuestaVerificacion,
   ]);
+
+  // Sin esperar el debounce: al mandar la app a segundo plano (el sistema puede matarla
+  // ahí mismo) y al salir de la pantalla, se guarda en el acto para no perder los
+  // últimos 600ms de cambios.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (estado) => {
+      if (estado !== 'active') guardarAhoraRef.current();
+    });
+    return () => {
+      sub.remove();
+      guardarAhoraRef.current();
+    };
+  }, []);
 
   const usarUbicacion = async () => {
     const coords = await obtenerUbicacion();
@@ -364,37 +488,21 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // Pura (no toca estado): se usa tanto para habilitar/deshabilitar "Siguiente" en cada
   // render (pasoValido abajo) como, al tocar "Siguiente", para decidir si avanzar y qué
   // errores mostrar por campo.
-  const calcularErrores = (p) => {
-    const found = {};
-    if (p === 'tipo' && !tipo) {
-      found.tipo = 'Elegí qué querés publicar.';
-    }
-    if (p === 'fotos' && fotos.length === 0) {
-      found.fotos = 'Agregá al menos una foto.';
-    }
-    if (p === 'detalles') {
-      if (!titulo.trim()) found.titulo = 'El título es obligatorio.';
-      if (!descripcion.trim()) found.descripcion = 'La descripción es obligatoria.';
-      if (!categoria) found.categoria = 'Elegí una categoría.';
-      if (fechaSuceso > new Date()) found.fecha = 'La fecha no puede ser futura.';
-    }
-    if (p === 'ubicacion') {
-      if (!barrioId) found.barrio = 'Elegí el barrio.';
-      // "ya sea escribiéndola o tomando la ubicación actual" (consigna del TP): alcanza
-      // con una de las dos, no hace falta exigir las dos — antes acá se pedían ambas
-      // siempre, lo que bloqueaba "Siguiente" con barrio + dirección ya cargados.
-      const tieneDireccion = Boolean(direccionExacta.trim());
-      const tieneCoordenadas = latExacta != null && lngExacta != null;
-      if (!tieneDireccion && !tieneCoordenadas) {
-        found.ubicacion = 'Escribí la dirección exacta o usá tu ubicación actual.';
-      }
-    }
-    if (p === 'verificacion') {
-      if (!preguntaVerificacion.trim()) found.pregunta = 'Cargá una pregunta de verificación.';
-      if (!respuestaVerificacion.trim()) found.respuesta = 'Cargá la respuesta correcta.';
-    }
-    return found;
-  };
+  const calcularErrores = (p) =>
+    erroresDe(p, {
+      tipo,
+      fotos,
+      titulo,
+      descripcion,
+      categoria,
+      fechaSuceso,
+      barrioId,
+      direccionExacta,
+      latExacta,
+      lngExacta,
+      preguntaVerificacion,
+      respuestaVerificacion,
+    });
 
   // Antes "Siguiente" solo validaba al tocarlo, así que se podía avanzar de un paso vacío
   // con un solo toque extra; ahora el botón queda deshabilitado hasta que el paso actual
