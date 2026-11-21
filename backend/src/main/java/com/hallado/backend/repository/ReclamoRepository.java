@@ -1,5 +1,6 @@
 package com.hallado.backend.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,4 +38,11 @@ public interface ReclamoRepository extends JpaRepository<Reclamo, String> {
     Optional<Reclamo> findByIdForUpdate(@Param("id") String id);
 
     boolean existsByPublicacionIdAndAutorIdAndEstado(String publicacionId, String autorId, EstadoReclamo estado);
+
+    // Detalle de publicación: "ya reclamé" = hay un reclamo vivo (pendiente/aceptado) y
+    // "intentos restantes" = tope de intentos menos cantidad de reclamos del usuario.
+    boolean existsByPublicacionIdAndAutorIdAndEstadoIn(
+            String publicacionId, String autorId, Collection<EstadoReclamo> estados);
+
+    long countByPublicacionIdAndAutorId(String publicacionId, String autorId);
 }

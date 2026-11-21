@@ -1,14 +1,7 @@
-import { StyleSheet, Text } from 'react-native';
-import { colors } from '../config/theme';
+import { InlineMessage } from './StateViews';
 
-export default function ErrorText({ message }) {
-  if (!message) return null;
-  return <Text style={styles.error}>{message}</Text>;
+// Compatibilidad: las pantallas viejas usan <ErrorText message=... />. Ahora es un aviso
+// visible (fondo + ícono), no texto rojo suelto.
+export default function ErrorText({ message, style }) {
+  return <InlineMessage tone="error" message={message} style={style} />;
 }
-
-const styles = StyleSheet.create({
-  error: {
-    color: colors.error,
-    fontSize: 14,
-  },
-});

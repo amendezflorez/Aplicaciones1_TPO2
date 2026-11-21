@@ -58,6 +58,12 @@ códigos de registro/recupero de contraseña se imprimen en la consola del backe
 INFO ... OtpService : Código OTP para alguien@mail.com (REGISTER): 483920
 ```
 
+Cómo verlo durante la demo: dejá visible la terminal donde corre `mvn spring-boot:run`,
+pedí el código desde la app (registro o "Olvidé mi contraseña") y buscá la línea
+`Código OTP para <tu email>`; el último código generado es el vigente. En la pantalla de
+verificación la app muestra un aviso de "modo demo" que lo recuerda. Si el código venció
+o pasaron 60 s, usá "Reenviar código" y tomá el nuevo de la consola.
+
 ## Variables de entorno opcionales
 
 | Variable | Default | Qué hace |

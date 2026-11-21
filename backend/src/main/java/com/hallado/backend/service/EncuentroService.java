@@ -9,6 +9,7 @@ import com.hallado.backend.entity.EstadoPropuestaEncuentro;
 import com.hallado.backend.entity.EstadoReclamo;
 import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.Reclamo;
+import com.hallado.backend.entity.TipoNotificacion;
 import com.hallado.backend.entity.TipoReclamo;
 import com.hallado.backend.entity.User;
 import com.hallado.backend.exception.ApiException;
@@ -30,14 +31,17 @@ public class EncuentroService {
     private final ReclamoRepository reclamoRepository;
     private final EncuentroPropuestaRepository propuestaRepository;
     private final UserRepository userRepository;
+    private final NotificacionService notificacionService;
 
     public EncuentroService(
             ReclamoRepository reclamoRepository,
             EncuentroPropuestaRepository propuestaRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            NotificacionService notificacionService) {
         this.reclamoRepository = reclamoRepository;
         this.propuestaRepository = propuestaRepository;
         this.userRepository = userRepository;
+        this.notificacionService = notificacionService;
     }
 
     @Transactional(readOnly = true)
@@ -53,8 +57,8 @@ public class EncuentroService {
         Reclamo reclamo = reclamoRepository.findByIdForUpdate(reclamoId).orElseThrow(NotFoundException::new);
         validarAcceso(reclamo, userId);
         validarAceptado(reclamo);
-        if (request == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "La propuesta de encuentro es obligatoria.");
+        if (request == null || request.direccion() == null || request.direccion().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Indicá la dirección del punto de encuentro.");
         }
 
         if ((request.latitud() == null) != (request.longitud() == null)) {
@@ -97,6 +101,17 @@ public class EncuentroService {
         propuesta.setCreadaEn(ahora);
         propuesta.setActualizadaEn(ahora);
         propuestaRepository.save(propuesta);
+
+        // Punto 12: la otra parte propuso o modificó el punto de encuentro.
+        boolean esPrimera = actual == null;
+        notificacionService.notificar(
+                otraParte(reclamo, userId),
+                esPrimera ? TipoNotificacion.ENCUENTRO_PROPUESTO : TipoNotificacion.ENCUENTRO_MODIFICADO,
+                esPrimera ? "Te propusieron un punto de encuentro" : "Propusieron otro punto de encuentro",
+                nombre(proponente) + " propuso encontrarse en " + propuesta.getDireccion()
+                        + " para devolver «" + reclamo.getPublicacion().getTitulo() + "».",
+                reclamo.getId(),
+                reclamo.getPublicacion().getId());
         return respuesta(reclamo);
     }
 
@@ -119,7 +134,23 @@ public class EncuentroService {
         actual.setEstado(EstadoPropuestaEncuentro.ACEPTADO);
         actual.setActualizadaEn(Instant.now());
         propuestaRepository.save(actual);
+
+        notificacionService.notificar(
+                actual.getPropuestoPor(),
+                TipoNotificacion.ENCUENTRO_ACEPTADO,
+                "Punto de encuentro confirmado",
+                "Aceptaron encontrarse en " + actual.getDireccion() + ". ¡Ya pueden coordinar la entrega!",
+                reclamo.getId(),
+                reclamo.getPublicacion().getId());
         return respuesta(reclamo);
+    }
+
+    private User otraParte(Reclamo reclamo, String userId) {
+        return reclamo.getAutor().getId().equals(userId) ? reclamo.getPublicacion().getPublicador() : reclamo.getAutor();
+    }
+
+    private static String nombre(User user) {
+        return (user.getName() == null || user.getName().isBlank()) ? "La otra persona" : user.getName();
     }
 
     private void validarAcceso(Reclamo reclamo, String userId) {

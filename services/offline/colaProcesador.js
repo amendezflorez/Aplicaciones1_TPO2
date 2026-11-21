@@ -65,15 +65,29 @@ async function verificarSesionDe(userId) {
 // mismo patrón "fuera de React" que el mutex de arriba.
 const listeners = new Set();
 
+// listener(userId, evento): evento = { tipo: 'enviada' | 'error', titulo, mensajeError? }.
+// Devuelve la función para dejar de escuchar (usar en el cleanup de un useEffect).
 export function escucharColaProcesada(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-function avisarCambio(userId) {
+// Cantidad de <AvisosCola /> globales montados (components/AvisosCola.js). Si hay alguno,
+// ya se encarga del toast "se publicó"; las pantallas que escuchan la cola solo refrescan
+// su lista, para no mostrar el mismo aviso dos veces.
+let avisosGlobales = 0;
+export function registrarAvisosGlobales() {
+  avisosGlobales += 1;
+  return () => {
+    avisosGlobales -= 1;
+  };
+}
+export const hayAvisosGlobales = () => avisosGlobales > 0;
+
+function avisarCambio(userId, evento) {
   for (const listener of listeners) {
     try {
-      listener(userId);
+      listener(userId, evento);
     } catch {
       // un listener roto no frena el procesamiento
     }
@@ -133,7 +147,7 @@ async function procesar(userId) {
         antesDeCadaRequest: () => verificarSesionDe(userId),
       });
       await quitarDeCola(userId, actual.clientRequestId);
-      avisarCambio(userId);
+      avisarCambio(userId, { tipo: 'enviada', titulo: actual.borrador.titulo });
     } catch (e) {
       // Sesión vencida: el interceptor de services/api.js ya hizo logout por su cuenta
       // ante este 401 (no es una ruta /auth/*). Un 401 NO es un error de validación del
@@ -198,7 +212,7 @@ async function procesar(userId) {
         estado: 'error',
         mensajeError: getErrorMessage(e),
       });
-      avisarCambio(userId);
+      avisarCambio(userId, { tipo: 'error', titulo: actual.borrador.titulo, mensajeError: getErrorMessage(e) });
     }
   }
 }

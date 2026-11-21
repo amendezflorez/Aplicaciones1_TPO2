@@ -1,257 +1,312 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import Button from '../../components/Button';
-import { colors, radius, spacing } from '../../config/theme';
+import { InlineMessage } from '../../components/StateViews';
+import { colors, radius, spacing, typography } from '../../config/theme';
+import { useToast } from '../../hooks/useToast';
 import { getErrorMessage } from '../../services/errors';
 import { valorarCaso } from '../../services/historialService';
 
+const MAX_MENSAJE = 250;
+
+// Valoración de la contraparte (Punto 10): positiva/negativa, mensaje breve opcional y,
+// solo para quien recuperó el objeto, un agradecimiento público opcional.
 export default function ValorarModal({ visible, caso, onClose, onValorado }) {
-  const [positiva, setPositiva] = useState(true);
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      {/* El formulario se monta recién al abrir: cada caso arranca con campos limpios. */}
+      {caso ? <Formulario key={caso.id} caso={caso} onClose={onClose} onValorado={onValorado} /> : null}
+    </Modal>
+  );
+}
+
+function Formulario({ caso, onClose, onValorado }) {
+  const toast = useToast();
+  const [positiva, setPositiva] = useState(null); // null = todavía no eligió
   const [comentario, setComentario] = useState('');
   const [incluirAgradecimiento, setIncluirAgradecimiento] = useState(false);
   const [agradecimiento, setAgradecimiento] = useState('');
   const [loading, setLoading] = useState(false);
-
-  if (!caso) return null;
+  const [error, setError] = useState('');
 
   const esRecuperador = caso.tipo === 'recupere';
+  const nombre = caso.contraparte.name;
 
   const enviar = async () => {
+    if (positiva === null) return;
     setLoading(true);
+    setError('');
     try {
-      const data = {
+      const actualizado = await valorarCaso(caso.id, {
         positiva,
         comentario: comentario.trim() || undefined,
-        agradecimientoPublico: esRecuperador && incluirAgradecimiento && agradecimiento.trim()
-          ? agradecimiento.trim()
-          : undefined,
-      };
-      const actualizado = await valorarCaso(caso.id, data);
-      Alert.alert('¡Muchas gracias!', 'Tu valoración fue registrada exitosamente.');
+        agradecimientoPublico:
+          esRecuperador && incluirAgradecimiento && agradecimiento.trim() ? agradecimiento.trim() : undefined,
+      });
       onValorado(actualizado);
       onClose();
+      toast.success(`Listo, valoraste a ${nombre}. ¡Gracias por ayudar a la comunidad!`);
     } catch (e) {
-      Alert.alert('No se pudo enviar', getErrorMessage(e));
+      // El toast queda detrás del modal: el error se muestra también adentro.
+      const mensaje = getErrorMessage(e);
+      setError(mensaje);
+      toast.error(mensaje);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.modal}>
-          <ScrollView contentContainerStyle={styles.scroll}>
-            <Text style={styles.titulo}>Valorar a {caso.contraparte.name}</Text>
-            <Text style={styles.subtitulo}>
-              Por la devolución de: {caso.publicacionTitulo}
-            </Text>
-
-            <Text style={styles.label}>¿Cómo calificarías la experiencia?</Text>
-            <View style={styles.selectorCalificacion}>
-              <TouchableOpacity
-                style={[styles.opcionCalificacion, positiva && styles.opcionPositivaActiva]}
-                onPress={() => setPositiva(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.calificacionEmoji}>👍</Text>
-                <Text style={[styles.calificacionTexto, positiva && styles.calificacionTextoActivo]}>
-                  Positiva
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.opcionCalificacion, !positiva && styles.opcionNegativaActiva]}
-                onPress={() => setPositiva(false)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.calificacionEmoji}>👎</Text>
-                <Text style={[styles.calificacionTexto, !positiva && styles.calificacionTextoActivo]}>
-                  Negativa
-                </Text>
-              </TouchableOpacity>
+    <>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={styles.fondo} onPress={loading ? undefined : onClose} accessibilityLabel="Cerrar" />
+        <View style={styles.sheet}>
+          <View style={styles.handle} />
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.encabezado}>
+              <Text style={styles.titulo}>{`Valorar a ${nombre}`}</Text>
+              <Text style={styles.subtitulo} numberOfLines={2}>
+                {caso.publicacionTitulo}
+              </Text>
             </View>
 
-            <Text style={styles.label}>Mensaje breve (opcional)</Text>
-            <TextInput
-              style={styles.inputArea}
-              placeholder="Contá cómo fue la entrega o el trato recibido…"
-              placeholderTextColor={colors.textMuted}
-              multiline
-              maxLength={250}
-              value={comentario}
-              onChangeText={setComentario}
-            />
+            <Text style={styles.label}>¿Cómo fue la experiencia?</Text>
+            <View style={styles.opciones}>
+              <Opcion
+                icon="thumbs-up"
+                label="Positiva"
+                tone="success"
+                selected={positiva === true}
+                onPress={() => setPositiva(true)}
+              />
+              <Opcion
+                icon="thumbs-down"
+                label="Negativa"
+                tone="error"
+                selected={positiva === false}
+                onPress={() => setPositiva(false)}
+              />
+            </View>
+
+            <View style={styles.campo}>
+              <Text style={styles.label}>Mensaje breve (opcional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Contá cómo fue la entrega o el trato…"
+                placeholderTextColor={colors.textMuted}
+                multiline
+                maxLength={MAX_MENSAJE}
+                value={comentario}
+                onChangeText={setComentario}
+                accessibilityLabel="Mensaje de la valoración"
+              />
+              <Contador valor={comentario} />
+            </View>
 
             {esRecuperador ? (
-              <View style={styles.agradecimientoSeccion}>
+              <View style={styles.agradecimientoBox}>
                 <View style={styles.switchRow}>
                   <View style={styles.switchInfo}>
                     <Text style={styles.switchLabel}>Agradecimiento público</Text>
-                    <Text style={styles.switchSub}>
-                      Aparecerá en el perfil público de {caso.contraparte.name} para destacar su ayuda.
-                    </Text>
+                    <Text style={styles.ayuda}>{`Se muestra en el perfil de ${nombre}.`}</Text>
                   </View>
                   <Switch
                     value={incluirAgradecimiento}
                     onValueChange={setIncluirAgradecimiento}
-                    trackColor={{ true: colors.primary, false: colors.border }}
+                    trackColor={{ true: colors.primary, false: colors.borderStrong }}
+                    thumbColor={colors.white}
+                    accessibilityLabel="Dejar un agradecimiento público"
                   />
                 </View>
-
                 {incluirAgradecimiento ? (
-                  <TextInput
-                    style={styles.inputArea}
-                    placeholder="Escribí unas palabras públicas de agradecimiento…"
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    maxLength={250}
-                    value={agradecimiento}
-                    onChangeText={setAgradecimiento}
-                  />
+                  <View style={styles.campo}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Escribí unas palabras de agradecimiento…"
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      maxLength={MAX_MENSAJE}
+                      value={agradecimiento}
+                      onChangeText={setAgradecimiento}
+                      accessibilityLabel="Agradecimiento público"
+                    />
+                    <Contador valor={agradecimiento} />
+                  </View>
                 ) : null}
               </View>
             ) : null}
 
-            <View style={styles.botones}>
-              <Button
-                title="Cancelar"
-                variant="secondary"
-                onPress={onClose}
-                disabled={loading}
-              />
-              <Button
-                title="Enviar valoración"
-                onPress={enviar}
-                loading={loading}
-              />
-            </View>
+            <InlineMessage tone="error" message={error} />
           </ScrollView>
+
+          <View style={styles.footer}>
+            <Button title="Cancelar" variant="secondary" onPress={onClose} disabled={loading} style={styles.footerBtn} />
+            <Button
+              title="Enviar valoración"
+              icon="send"
+              onPress={enviar}
+              loading={loading}
+              disabled={positiva === null}
+              style={styles.footerBtn}
+            />
+          </View>
         </View>
       </KeyboardAvoidingView>
-    </Modal>
+    </>
+  );
+}
+
+function Contador({ valor }) {
+  const restante = MAX_MENSAJE - valor.length;
+  return (
+    <Text style={[styles.contador, restante <= 20 && styles.contadorLimite]}>{`${valor.length}/${MAX_MENSAJE}`}</Text>
+  );
+}
+
+function Opcion({ icon, label, tone, selected, onPress }) {
+  const color = tone === 'success' ? colors.success : colors.error;
+  const soft = tone === 'success' ? colors.successSoft : colors.errorSoft;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`Valoración ${label.toLowerCase()}`}
+      style={[styles.opcion, selected && { borderColor: color, backgroundColor: soft }]}
+    >
+      <Ionicons name={selected ? icon : `${icon}-outline`} size={36} color={selected ? color : colors.textMuted} />
+      <Text style={[styles.opcionTexto, selected && { color }]}>{label}</Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+    backgroundColor: colors.overlay,
   },
-  modal: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    maxHeight: '85%',
+  fondo: {
+    flex: 1,
+  },
+  sheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    maxHeight: '90%',
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    marginTop: spacing.sm,
   },
   scroll: {
     padding: spacing.lg,
     gap: spacing.md,
   },
+  encabezado: {
+    gap: spacing.xs,
+  },
   titulo: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
+    ...typography.title,
   },
   subtitulo: {
-    fontSize: 14,
-    color: colors.textMuted,
+    ...typography.body,
+    color: colors.textSecondary,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
+    ...typography.label,
     color: colors.text,
   },
-  selectorCalificacion: {
+  opciones: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.md - 4,
   },
-  opcionCalificacion: {
+  opcion: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    gap: spacing.sm,
+    minHeight: 104,
+    borderRadius: radius.lg,
+    borderWidth: 2,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.card,
   },
-  opcionPositivaActiva: {
-    borderColor: '#16A34A',
-    backgroundColor: '#DCFCE7',
-  },
-  opcionNegativaActiva: {
-    borderColor: '#DC2626',
-    backgroundColor: '#FEE2E2',
-  },
-  calificacionEmoji: {
-    fontSize: 20,
-  },
-  calificacionTexto: {
-    fontSize: 15,
-    fontWeight: '700',
+  opcionTexto: {
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.textMuted,
   },
-  calificacionTextoActivo: {
-    color: colors.text,
+  campo: {
+    gap: spacing.xs,
   },
-  inputArea: {
-    borderWidth: 1,
+  input: {
+    ...typography.body,
+    minHeight: 88,
+    backgroundColor: colors.card,
+    borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radius.md,
-    padding: spacing.sm,
-    fontSize: 14,
-    color: colors.text,
-    minHeight: 80,
+    padding: spacing.md - 4,
     textAlignVertical: 'top',
   },
-  agradecimientoSeccion: {
-    backgroundColor: '#F0F9FF',
+  contador: {
+    ...typography.caption,
+    alignSelf: 'flex-end',
+  },
+  contadorLimite: {
+    color: colors.warning,
+    fontWeight: '700',
+  },
+  agradecimientoBox: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.lg,
     padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    gap: spacing.sm,
+    gap: spacing.md - 4,
   },
   switchRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md - 4,
   },
   switchInfo: {
     flex: 1,
   },
   switchLabel: {
-    fontSize: 14,
-    fontWeight: '700',
+    ...typography.bodyStrong,
     color: colors.primaryDark,
   },
-  switchSub: {
-    fontSize: 12,
-    color: colors.textMuted,
+  ayuda: {
+    ...typography.caption,
   },
-  botones: {
+  footer: {
+    flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  footerBtn: {
+    flex: 1,
   },
 });
-

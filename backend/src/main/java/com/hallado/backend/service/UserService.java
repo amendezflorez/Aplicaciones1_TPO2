@@ -50,7 +50,11 @@ public class UserService {
                     .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "El barrio elegido no existe."));
             user.setBarrio(barrio);
         }
-        user.setPhone(request.phone());
+        // null = no vino en el request: se conserva el teléfono actual. "" = borrarlo.
+        if (request.phone() != null) {
+            String phone = request.phone().trim();
+            user.setPhone(phone.isEmpty() ? null : phone);
+        }
         if (request.phoneVisible() != null) {
             user.setPhoneVisible(request.phoneVisible());
         }

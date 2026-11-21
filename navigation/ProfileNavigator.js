@@ -4,13 +4,16 @@ import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import PublicProfileScreen from '../screens/profile/PublicProfileScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
+import { stackScreenOptions } from '../config/theme';
+import { renderCampana } from './renderCampana';
+
 
 const Stack = createNativeStackNavigator();
 
 export default function ProfileNavigator() {
   return (
-    <Stack.Navigator initialRouteName="Profile">
-      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Mi perfil' }} />
+    <Stack.Navigator screenOptions={stackScreenOptions} initialRouteName="Profile">
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Mi perfil', headerRight: renderCampana }} />
       <Stack.Screen
         name="EditProfile"
         component={EditProfileScreen}

@@ -106,14 +106,18 @@ export function ConnectivityProvider({ children }) {
   useEffect(() => setSinConexion(estado === 'offline'), [estado]);
 
   const notificarErrorDeRed = useCallback(() => setForzadoOffline(true), []);
+  // Cualquier respuesta del servidor (aunque sea un 4xx) prueba que hay conexión: levanta el
+  // "forzado offline" en el acto, sin esperar al sondeo de arriba.
+  const notificarExitoDeRed = useCallback(() => setForzadoOffline(false), []);
 
   const value = useMemo(
     () => ({
       estado,
       sinConexion: estado === 'offline',
       notificarErrorDeRed,
+      notificarExitoDeRed,
     }),
-    [estado, notificarErrorDeRed]
+    [estado, notificarErrorDeRed, notificarExitoDeRed]
   );
 
   return <ConnectivityContext.Provider value={value}>{children}</ConnectivityContext.Provider>;

@@ -32,6 +32,6 @@ public enum Categoria {
                 return c;
             }
         }
-        throw new ApiException(HttpStatus.BAD_REQUEST, "categoria inválida: " + value);
+        throw new ApiException(HttpStatus.BAD_REQUEST, "La categoría elegida no es válida.");
     }
 }

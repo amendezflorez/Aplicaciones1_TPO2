@@ -3,7 +3,9 @@ package com.hallado.backend.controller;
 import com.hallado.backend.dto.request.CrearAlertaRequest;
 import com.hallado.backend.dto.request.PausarAlertaRequest;
 import com.hallado.backend.dto.response.AlertaResponse;
+import com.hallado.backend.dto.response.NovedadesResponse;
 import com.hallado.backend.service.AlertaService;
+import com.hallado.backend.service.SeguimientoService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,9 +23,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class AlertaController {
 
     private final AlertaService alertaService;
+    private final SeguimientoService seguimientoService;
 
-    public AlertaController(AlertaService alertaService) {
+    public AlertaController(AlertaService alertaService, SeguimientoService seguimientoService) {
         this.alertaService = alertaService;
+        this.seguimientoService = seguimientoService;
+    }
+
+    // Liviano, para el badge de la tab: { alertas, seguidas }.
+    @GetMapping("/alertas/novedades")
+    public NovedadesResponse novedades(@RequestAttribute("userId") String userId) {
+        return new NovedadesResponse(
+                alertaService.totalNovedades(userId), seguimientoService.contarConCambio(userId));
     }
 
     @PostMapping("/alertas")

@@ -1,202 +1,214 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { CATEGORIAS } from '../config/constants';
-import { colors, radius, spacing } from '../config/theme';
-import { formatFechaRelativa } from '../utils/publicacionFormatters';
+import { colors, radius, spacing, typography } from '../config/theme';
+import { formatFecha } from '../utils/publicacionFormatters';
+import Button from './Button';
+import Card from './Card';
+import Chip from './Chip';
 
-export default function AlertaCard({ alerta, onPress, onTogglePausa, onEliminar, disabled }) {
-  const categoriaLabel =
-    CATEGORIAS.find((c) => c.id === alerta.categoria)?.label ??
-    (alerta.categoria ? alerta.categoria : 'Cualquier categoría');
+// Ícono por categoría (mismas categorías que config/constants.js).
+const ICONO_CATEGORIA = {
+  documentos: 'document-text-outline',
+  llaves: 'key-outline',
+  electronica: 'phone-portrait-outline',
+  mascotas: 'paw-outline',
+  ropa: 'shirt-outline',
+  otros: 'cube-outline',
+};
 
-  const tipoLabel =
-    alerta.tipoBuscado === 'perdi'
-      ? 'Si perdiste algo'
-      : alerta.tipoBuscado === 'encontre'
-      ? 'Si encontraste algo'
-      : 'Cualquier tipo';
+// Tarjeta de "Mis alertas" (Punto 9). La API devuelve tipoBuscado 'perdido' | 'encontrado':
+// lo que la persona perdió o encontró; la alerta le avisa de publicaciones del tipo opuesto.
+export default function AlertaCard({
+  alerta,
+  onPress,
+  onTogglePausa,
+  onEliminar,
+  busy = false,
+  disabled = false,
+}) {
+  const categoria = CATEGORIAS.find((c) => c.id === alerta.categoria);
+  const perdido = alerta.tipoBuscado === 'perdido';
+  const tipoLabel = perdido ? 'Perdí algo' : alerta.tipoBuscado === 'encontrado' ? 'Encontré algo' : 'Cualquier tipo';
+  const tipoColor = perdido ? colors.perdido : colors.encontrado;
+  const tipoSoft = perdido ? colors.perdidoSoft : colors.encontradoSoft;
+  const tipoIcon = perdido ? 'help-circle' : 'hand-left';
 
-  const tieneNovedades = Boolean(alerta.novedadesCount && alerta.novedadesCount > 0 && !alerta.pausada);
+  const nuevas = !alerta.pausada && alerta.novedadesCount > 0 ? alerta.novedadesCount : 0;
 
   return (
-    <TouchableOpacity
-      style={[styles.card, alerta.pausada && styles.cardPausada]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.header}>
-        <View style={styles.tipoContainer}>
-          <Text style={styles.tipoText}>{tipoLabel}</Text>
+    <Card padded={false} style={[styles.card, alerta.pausada && styles.cardPausada]}>
+      {/* Solo el cuerpo es tocable: el switch y "Eliminar" quedan afuera para que su toque
+          no dispare también la búsqueda (en web el evento burbujea al padre). */}
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Alerta: ${tipoLabel}. ${nuevas ? `${nuevas} nuevas. ` : ''}Tocá para ver los resultados`}
+        style={({ pressed }) => [styles.body, pressed && { opacity: 0.85 }]}
+      >
+        <View style={styles.headerRow}>
+          <View style={[styles.tipo, { backgroundColor: tipoSoft }]}>
+            <Ionicons name={tipoIcon} size={14} color={tipoColor} />
+            <Text style={[styles.tipoText, { color: tipoColor }]}>{tipoLabel}</Text>
+          </View>
           {alerta.pausada ? (
-            <View style={styles.chipPausada}>
-              <Text style={styles.chipPausadaText}>Pausada</Text>
-            </View>
+            <Chip label="Pausada" tone="neutral" icon="pause" size="sm" />
           ) : (
-            <View style={styles.chipActiva}>
-              <Text style={styles.chipActivaText}>Activa</Text>
-            </View>
+            <Chip label="Activa" tone="success" icon="notifications" size="sm" />
           )}
         </View>
-        <Text style={styles.fecha}>{formatFechaRelativa(alerta.creadaEn)}</Text>
-      </View>
 
-      <View style={styles.criterios}>
-        <Text style={styles.criterio}>
-          📁 <Text style={styles.criterioValor}>{categoriaLabel}</Text>
-        </Text>
-        <Text style={styles.criterio}>
-          📍 <Text style={styles.criterioValor}>{alerta.barrio?.name ?? 'Cualquier barrio'}</Text>
-        </Text>
-        {alerta.texto ? (
-          <Text style={styles.criterio}>
-            🔍 <Text style={styles.criterioValor}>{`"${alerta.texto}"`}</Text>
-          </Text>
-        ) : null}
-      </View>
-
-      {tieneNovedades ? (
-        <View style={styles.novedadBanner}>
-          <Text style={styles.novedadText}>
-            🔔 {alerta.novedadesCount} {alerta.novedadesCount === 1 ? 'coincidencia nueva' : 'coincidencias nuevas'}
-          </Text>
-          <Text style={styles.verNovedadesText}>Tocar para ver ›</Text>
+        <View style={styles.criterios}>
+          <Criterio icon={ICONO_CATEGORIA[alerta.categoria] ?? 'apps-outline'}>
+            {categoria?.label ?? 'Cualquier categoría'}
+          </Criterio>
+          <Criterio icon="location-outline">{alerta.barrio?.name ?? 'Cualquier barrio'}</Criterio>
+          {alerta.texto ? <Criterio icon="search-outline">{`Palabras clave: “${alerta.texto}”`}</Criterio> : null}
+          <Criterio icon="calendar-outline" muted>
+            {`Creada el ${formatFecha(alerta.creadaEn)}`}
+          </Criterio>
         </View>
-      ) : null}
 
-      <View style={styles.acciones}>
-        <TouchableOpacity
-          style={[styles.botonAccion, disabled && styles.botonDeshabilitado]}
-          onPress={onTogglePausa}
-          disabled={disabled}
-        >
-          <Text style={styles.botonAccionText}>
-            {alerta.pausada ? '▶ Reanudar' : '⏸ Pausar'}
-          </Text>
-        </TouchableOpacity>
+        {nuevas > 0 ? (
+          <View style={styles.novedades}>
+            <View style={styles.novedadesIcon}>
+              <Ionicons name="sparkles" size={14} color={colors.white} />
+            </View>
+            <Text style={styles.novedadesText}>
+              {nuevas === 1 ? '1 nueva coincidencia' : `${nuevas} nuevas coincidencias`}
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.accent} />
+          </View>
+        ) : null}
+      </Pressable>
 
-        <TouchableOpacity
-          style={[styles.botonAccion, styles.botonEliminar, disabled && styles.botonDeshabilitado]}
+      <View style={styles.footer}>
+        <View style={styles.switchWrap}>
+          {busy ? (
+            <ActivityIndicator color={colors.primary} style={styles.switchLoader} />
+          ) : (
+            <Switch
+              value={!alerta.pausada}
+              onValueChange={onTogglePausa}
+              disabled={disabled}
+              trackColor={{ true: colors.primary, false: colors.borderStrong }}
+              thumbColor={colors.white}
+              accessibilityLabel={alerta.pausada ? 'Activar alerta' : 'Pausar alerta'}
+            />
+          )}
+          <Pressable onPress={disabled || busy ? undefined : onTogglePausa} hitSlop={8} accessibilityRole="button" accessibilityLabel={alerta.pausada ? 'Activar avisos' : 'Pausar avisos'}>
+            <Text style={styles.switchLabel}>{alerta.pausada ? 'Avisos pausados' : 'Avisos activos'}</Text>
+          </Pressable>
+        </View>
+        <Button
+          title="Eliminar"
+          icon="trash-outline"
+          variant="danger"
+          size="sm"
           onPress={onEliminar}
-          disabled={disabled}
-        >
-          <Text style={[styles.botonAccionText, styles.botonEliminarText]}>🗑 Eliminar</Text>
-        </TouchableOpacity>
+          disabled={disabled || busy}
+        />
       </View>
-    </TouchableOpacity>
+    </Card>
+  );
+}
+
+function Criterio({ icon, children, muted = false }) {
+  return (
+    <View style={styles.criterio}>
+      <Ionicons name={icon} size={16} color={colors.textMuted} />
+      <Text style={[styles.criterioText, muted && styles.criterioMuted]} numberOfLines={2}>
+        {children}
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.sm,
+    overflow: 'hidden',
   },
   cardPausada: {
-    backgroundColor: colors.surface,
-    opacity: 0.85,
+    backgroundColor: colors.background,
   },
-  header: {
+  body: {
+    padding: spacing.md,
+    gap: spacing.md - 4,
+  },
+  headerRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
   },
-  tipoContainer: {
+  tipo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.xs + 1,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: radius.round,
   },
   tipoText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  chipActiva: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  chipActivaText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.success,
-  },
-  chipPausada: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  chipPausadaText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  fecha: {
-    fontSize: 12,
-    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '800',
   },
   criterios: {
-    gap: 2,
-    marginVertical: 2,
+    gap: spacing.xs + 2,
   },
   criterio: {
-    fontSize: 13,
-    color: colors.textMuted,
-  },
-  criterioValor: {
-    color: colors.text,
-    fontWeight: '500',
-  },
-  novedadBanner: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: radius.sm,
-  },
-  novedadText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#92400E',
-  },
-  verNovedadesText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#B45309',
-  },
-  acciones: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
     gap: spacing.sm,
-    marginTop: spacing.xs,
-    paddingTop: spacing.xs,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  criterioText: {
+    ...typography.body,
+    flex: 1,
+  },
+  criterioMuted: {
+    ...typography.caption,
+  },
+  novedades: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md - 4,
+  },
+  novedadesIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  novedadesText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#B8411F',
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  botonAccion: {
-    paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
+  switchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 44,
   },
-  botonAccionText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.text,
+  switchLoader: {
+    width: 51,
   },
-  botonEliminar: {
-    backgroundColor: '#FEE2E2',
-  },
-  botonEliminarText: {
-    color: colors.error,
-  },
-  botonDeshabilitado: {
-    opacity: 0.5,
+  switchLabel: {
+    ...typography.label,
   },
 });

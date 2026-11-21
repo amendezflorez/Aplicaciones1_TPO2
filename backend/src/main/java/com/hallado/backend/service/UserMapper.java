@@ -48,12 +48,12 @@ public class UserMapper {
         return BarrioResponse.of(barrio);
     }
 
-    private ReputationResponse toReputationResponse(User user) {
+    public ReputationResponse toReputationResponse(User user) {
         return new ReputationResponse(
                 user.getReturnsCount(), user.getPositiveCount(), user.getNegativeCount(), user.getScore());
     }
 
-    private List<BadgeResponse> badgesFor(User user) {
+    public List<BadgeResponse> badgesFor(User user) {
         return user.getReturnsCount() >= SOLIDARIO_MIN_RETURNS ? List.of(BADGE_VECINO_SOLIDARIO) : List.of();
     }
 }

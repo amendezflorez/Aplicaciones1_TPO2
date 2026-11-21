@@ -10,6 +10,7 @@ import com.hallado.backend.entity.Barrio;
 import com.hallado.backend.entity.EstadoReclamo;
 import com.hallado.backend.entity.FotoPublicacion;
 import com.hallado.backend.entity.Publicacion;
+import com.hallado.backend.entity.User;
 import com.hallado.backend.repository.FotoPublicacionRepository;
 import com.hallado.backend.repository.ReclamoRepository;
 import com.hallado.backend.repository.SeguimientoRepository;
@@ -26,14 +27,20 @@ public class PublicacionMapper {
     private final FotoPublicacionRepository fotoPublicacionRepository;
     private final ReclamoRepository reclamoRepository;
     private final SeguimientoRepository seguimientoRepository;
+    private final UserMapper userMapper;
+
+    // Mismo tope que ReclamoService.MAX_INTENTOS (ahí se aplica; acá solo se informa).
+    private static final int MAX_INTENTOS_RECLAMO = 3;
 
     public PublicacionMapper(
             FotoPublicacionRepository fotoPublicacionRepository,
             ReclamoRepository reclamoRepository,
-            SeguimientoRepository seguimientoRepository) {
+            SeguimientoRepository seguimientoRepository,
+            UserMapper userMapper) {
         this.fotoPublicacionRepository = fotoPublicacionRepository;
         this.reclamoRepository = reclamoRepository;
         this.seguimientoRepository = seguimientoRepository;
+        this.userMapper = userMapper;
     }
 
     public PublicacionResumenResponse toResumen(Publicacion p) {
@@ -56,8 +63,13 @@ public class PublicacionMapper {
                 reclamoRepository.existsByPublicacionIdAndAutorIdAndEstado(p.getId(), userId, EstadoReclamo.ACEPTADO);
         boolean revelarUbicacionExacta = esPropia || reclamoAceptado;
 
+        // Solo un reclamo vivo bloquea el botón: si el anterior fue rechazado o venció, la
+        // persona puede volver a intentar mientras le queden intentos.
         boolean yaReclame = !esPropia
-                && !reclamoRepository.findByPublicacionIdAndAutorId(p.getId(), userId).isEmpty();
+                && reclamoRepository.existsByPublicacionIdAndAutorIdAndEstadoIn(
+                        p.getId(), userId, List.of(EstadoReclamo.PENDIENTE, EstadoReclamo.ACEPTADO));
+        long reclamosDelUsuario = esPropia ? 0 : reclamoRepository.countByPublicacionIdAndAutorId(p.getId(), userId);
+        int intentosRestantes = (int) Math.max(0, MAX_INTENTOS_RECLAMO - reclamosDelUsuario);
         boolean siguiendo = seguimientoRepository.existsByUsuarioIdAndPublicacionId(userId, p.getId());
 
         List<FotoPublicacionResponse> fotos = fotoPublicacionRepository
@@ -84,11 +96,11 @@ public class PublicacionMapper {
                 revelarUbicacionExacta ? p.getLatExacta() : null,
                 revelarUbicacionExacta ? p.getLngExacta() : null,
                 p.getPreguntaVerificacion(),
-                new PublicadorResponse(
-                        p.getPublicador().getId(), p.getPublicador().getName(), p.getPublicador().getPhotoUrl()),
+                toPublicadorResponse(p.getPublicador()),
                 esPropia,
                 yaReclame,
-                siguiendo);
+                siguiendo,
+                intentosRestantes);
     }
 
     // Punto 5: item de "Mis publicaciones". "puedeRenovar" la calcula el llamador
@@ -108,6 +120,15 @@ public class PublicacionMapper {
                 p.getCreadaEn(),
                 p.getVenceEn(),
                 puedeRenovar);
+    }
+
+    private PublicadorResponse toPublicadorResponse(User publicador) {
+        return new PublicadorResponse(
+                publicador.getId(),
+                publicador.getName(),
+                publicador.getPhotoUrl(),
+                userMapper.toReputationResponse(publicador),
+                userMapper.badgesFor(publicador));
     }
 
     private String fotoPrincipalUrl(String publicacionId) {

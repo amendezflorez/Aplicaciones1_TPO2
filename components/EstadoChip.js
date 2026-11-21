@@ -1,33 +1,19 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing } from '../config/theme';
+import Chip from './Chip';
 
-// Mismos estados que el enum EstadoPublicacion del backend Java.
+// Estados de publicación (enum EstadoPublicacion del backend) y de reclamo (EstadoReclamo).
 const ESTADOS = {
-  abierta: { label: 'Abierta', color: colors.success },
-  en_reclamo: { label: 'En reclamo', color: colors.accent },
-  resuelta: { label: 'Resuelta', color: colors.textMuted },
-  vencida: { label: 'Vencida', color: colors.error },
+  abierta: { label: 'Abierta', tone: 'success', icon: 'ellipse' },
+  en_reclamo: { label: 'En reclamo', tone: 'warning', icon: 'hourglass-outline' },
+  resuelta: { label: 'Resuelta', tone: 'primary', icon: 'checkmark-circle' },
+  vencida: { label: 'Vencida', tone: 'neutral', icon: 'time-outline' },
+  pendiente: { label: 'Pendiente', tone: 'warning', icon: 'hourglass-outline' },
+  pendiente_envio: { label: 'Pendiente de envío', tone: 'info', icon: 'cloud-upload-outline' },
+  aceptado: { label: 'Aceptado', tone: 'success', icon: 'checkmark-circle' },
+  rechazado: { label: 'Rechazado', tone: 'error', icon: 'close-circle' },
+  vencido: { label: 'Vencido', tone: 'neutral', icon: 'time-outline' },
 };
 
-export default function EstadoChip({ estado }) {
-  const info = ESTADOS[estado] ?? { label: estado, color: colors.textMuted };
-  return (
-    <View style={[styles.chip, { backgroundColor: info.color }]}>
-      <Text style={styles.text}>{info.label}</Text>
-    </View>
-  );
+export default function EstadoChip({ estado, style }) {
+  const info = ESTADOS[estado] ?? { label: estado ?? '—', tone: 'neutral' };
+  return <Chip label={info.label} tone={info.tone} icon={info.icon} size="sm" style={style} />;
 }
-
-const styles = StyleSheet.create({
-  chip: {
-    borderRadius: radius.round,
-    paddingVertical: 2,
-    paddingHorizontal: spacing.sm,
-    alignSelf: 'flex-start',
-  },
-  text: {
-    color: colors.white,
-    fontWeight: '600',
-    fontSize: 12,
-  },
-});

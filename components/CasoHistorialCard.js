@@ -1,282 +1,220 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { colors, radius, spacing } from '../config/theme';
-import { formatFechaRelativa } from '../utils/publicacionFormatters';
+import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { CATEGORIAS } from '../config/constants';
+import { colors, radius, spacing, typography } from '../config/theme';
+import { formatFecha } from '../utils/publicacionFormatters';
 import Avatar from './Avatar';
 import Button from './Button';
+import Card from './Card';
+import Chip from './Chip';
+import FotoPublicacion from './FotoPublicacion';
 
+// Caso resuelto del Historial (Punto 10): objeto, fecha absoluta, contraparte (abre su
+// perfil público) y estado de la valoración (pendiente con plazo / hecha / vencida).
 export default function CasoHistorialCard({ caso, onValorar, onVerPerfil, sinConexion }) {
   const esDevolvi = caso.tipo === 'devolvi';
+  const categoria = CATEGORIAS.find((c) => c.id === caso.publicacionCategoria)?.label ?? caso.publicacionCategoria;
+  const nombre = caso.contraparte.name;
+  const dias = caso.diasRestantesParaValorar;
 
   return (
-    <View style={styles.card}>
+    <Card padded={false}>
       <View style={styles.header}>
-        <View style={styles.tituloCol}>
+        <FotoPublicacion url={caso.publicacionFotoPrincipalUrl} style={styles.foto} iconSize={22} />
+        <View style={styles.headerInfo}>
+          <Chip
+            label={esDevolvi ? 'Devolviste' : 'Recuperaste'}
+            tone={esDevolvi ? 'primary' : 'accent'}
+            icon={esDevolvi ? 'hand-left' : 'checkmark-circle'}
+            size="sm"
+          />
           <Text style={styles.titulo} numberOfLines={2}>
             {caso.publicacionTitulo}
           </Text>
-          <Text style={styles.meta}>
-            {caso.publicacionCategoria ? `${caso.publicacionCategoria} · ` : ''}
-            Resuelto {formatFechaRelativa(caso.fechaResolucion)}
-          </Text>
-        </View>
-        <View style={[styles.badgeTipo, esDevolvi ? styles.badgeDevolvi : styles.badgeRecupere]}>
-          <Text style={[styles.badgeTipoTexto, esDevolvi ? styles.badgeDevolviTexto : styles.badgeRecupereTexto]}>
-            {esDevolvi ? '🤝 Devolviste' : '🎉 Recuperaste'}
-          </Text>
+          <View style={styles.fila}>
+            <Ionicons name="calendar-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.meta} numberOfLines={1}>
+              {`${categoria ? `${categoria} · ` : ''}${formatFecha(caso.fechaResolucion, { conAnio: true })}`}
+            </Text>
+          </View>
         </View>
       </View>
 
-      <TouchableOpacity
-        style={styles.contraparte}
+      <Pressable
+        style={({ pressed }) => [styles.contraparte, pressed && { backgroundColor: colors.primarySoft }]}
         onPress={() => onVerPerfil(caso.contraparte.id)}
-        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver el perfil de ${nombre}`}
       >
-        <Avatar uri={caso.contraparte.photoUrl} name={caso.contraparte.name} size={36} />
+        <Avatar uri={caso.contraparte.photoUrl} name={nombre} size={40} />
         <View style={styles.contraparteInfo}>
-          <Text style={styles.contraparteLabel}>
-            {esDevolvi ? 'Se lo entregaste a:' : 'Te lo devolvió:'}
+          <Text style={styles.contraparteLabel}>{esDevolvi ? 'Se lo entregaste a' : 'Te lo devolvió'}</Text>
+          <Text style={styles.contraparteNombre} numberOfLines={1}>
+            {nombre}
           </Text>
-          <Text style={styles.contraparteNombre}>{caso.contraparte.name}</Text>
         </View>
-        <Text style={styles.verPerfil}>Ver perfil ›</Text>
-      </TouchableOpacity>
+        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+      </Pressable>
 
-      <View style={styles.seccionValoracion}>
+      <View style={styles.valoracion}>
         {caso.miValoracion ? (
-          <View style={styles.valoracionBox}>
-            <View style={styles.valoracionHeader}>
-              <Text style={styles.valoracionTitulo}>Tu valoración a {caso.contraparte.name}:</Text>
-              <Text style={[styles.chipCalificacion, caso.miValoracion.positiva ? styles.chipPositiva : styles.chipNegativa]}>
-                {caso.miValoracion.positiva ? '👍 Positiva' : '👎 Negativa'}
+          <View style={styles.caja}>
+            <View style={styles.fila}>
+              <Ionicons
+                name={caso.miValoracion.positiva ? 'thumbs-up' : 'thumbs-down'}
+                size={18}
+                color={caso.miValoracion.positiva ? colors.success : colors.error}
+              />
+              <Text style={styles.cajaTitulo}>
+                {`Valoraste ${caso.miValoracion.positiva ? 'positivo' : 'negativo'} a ${nombre}`}
               </Text>
             </View>
             {caso.miValoracion.comentario ? (
-              <Text style={styles.comentarioTexto}>
-                {`"${caso.miValoracion.comentario}"`}
-              </Text>
+              <Text style={styles.comentario}>{`“${caso.miValoracion.comentario}”`}</Text>
             ) : null}
             {caso.miValoracion.agradecimientoPublico ? (
-              <View style={styles.agradecimientoBox}>
-                <Text style={styles.agradecimientoLabel}>Agradecimiento público:</Text>
+              <View style={styles.agradecimiento}>
+                <Ionicons name="heart" size={14} color={colors.primary} />
                 <Text style={styles.agradecimientoTexto}>
-                  {`"${caso.miValoracion.agradecimientoPublico}"`}
+                  {`Agradecimiento público: “${caso.miValoracion.agradecimientoPublico}”`}
                 </Text>
               </View>
             ) : null}
           </View>
         ) : caso.puedeValorar ? (
-          <View style={styles.pendienteBox}>
-            <View style={styles.pendienteInfo}>
-              <Text style={styles.pendienteTitulo}>Valoración pendiente</Text>
-              <Text style={styles.pendienteSub}>
-                Tenés {caso.diasRestantesParaValorar} {caso.diasRestantesParaValorar === 1 ? 'día restante' : 'días restantes'} para calificar a tu contraparte.
-              </Text>
-            </View>
+          <View style={styles.pendiente}>
             <Button
-              title={`Valorar a ${caso.contraparte.name}`}
+              title={`Valorar · quedan ${dias} ${dias === 1 ? 'día' : 'días'}`}
+              icon="star-outline"
               onPress={() => onValorar(caso)}
               disabled={sinConexion}
             />
+            {sinConexion ? <Text style={styles.ayuda}>Necesitás conexión para valorar.</Text> : null}
           </View>
         ) : (
-          <Text style={styles.plazoVencido}>
-            El plazo de 7 días para valorar este caso ha expirado.
-          </Text>
+          <View style={styles.fila}>
+            <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.ayuda}>Pasaron los 7 días para valorar este caso.</Text>
+          </View>
         )}
 
         {caso.valoracionRecibida ? (
-          <View style={styles.recibidaBox}>
-            <Text style={styles.recibidaTitulo}>
-              {caso.contraparte.name} te calificó: {caso.valoracionRecibida.positiva ? '👍 Positivo' : '👎 Negativo'}
-            </Text>
-            {caso.valoracionRecibida.comentario ? (
-              <Text style={styles.comentarioTexto}>
-                {`"${caso.valoracionRecibida.comentario}"`}
+          <View style={[styles.caja, styles.cajaRecibida]}>
+            <View style={styles.fila}>
+              <Ionicons
+                name={caso.valoracionRecibida.positiva ? 'thumbs-up' : 'thumbs-down'}
+                size={18}
+                color={caso.valoracionRecibida.positiva ? colors.success : colors.error}
+              />
+              <Text style={styles.cajaTitulo}>
+                {`${nombre} te valoró ${caso.valoracionRecibida.positiva ? 'positivo' : 'negativo'}`}
               </Text>
+            </View>
+            {caso.valoracionRecibida.comentario ? (
+              <Text style={styles.comentario}>{`“${caso.valoracionRecibida.comentario}”`}</Text>
             ) : null}
             {caso.valoracionRecibida.agradecimientoPublico ? (
-              <View style={styles.agradecimientoBox}>
-                <Text style={styles.agradecimientoLabel}>Te dejó este agradecimiento público:</Text>
+              <View style={styles.agradecimiento}>
+                <Ionicons name="heart" size={14} color={colors.primary} />
                 <Text style={styles.agradecimientoTexto}>
-                  {`"${caso.valoracionRecibida.agradecimientoPublico}"`}
+                  {`Te dejó un agradecimiento público: “${caso.valoracionRecibida.agradecimientoPublico}”`}
                 </Text>
               </View>
             ) : null}
           </View>
         ) : null}
       </View>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+    gap: spacing.md - 4,
+    padding: spacing.md,
+    paddingBottom: spacing.md - 4,
   },
-  tituloCol: {
+  foto: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.md,
+  },
+  headerInfo: {
     flex: 1,
-    gap: 2,
+    gap: spacing.xs + 1,
   },
   titulo: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
+    ...typography.subheading,
+  },
+  fila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
   },
   meta: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  badgeTipo: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-  },
-  badgeDevolvi: {
-    backgroundColor: '#DCFCE7',
-  },
-  badgeDevolviTexto: {
-    color: '#166534',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  badgeRecupere: {
-    backgroundColor: '#E0F2FE',
-  },
-  badgeRecupereTexto: {
-    color: '#0369A1',
-    fontSize: 12,
-    fontWeight: '700',
+    ...typography.caption,
+    flex: 1,
   },
   contraparte: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: spacing.md - 4,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.surface,
+    borderTopColor: colors.border,
   },
   contraparteInfo: {
     flex: 1,
   },
   contraparteLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
+    ...typography.caption,
   },
   contraparteNombre: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
+    ...typography.bodyStrong,
   },
-  verPerfil: {
-    fontSize: 13,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  seccionValoracion: {
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  valoracionBox: {
-    backgroundColor: colors.surface,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    gap: 4,
-  },
-  valoracionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  valoracionTitulo: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  chipCalificacion: {
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  chipPositiva: {
-    backgroundColor: '#DCFCE7',
-    color: '#166534',
-  },
-  chipNegativa: {
-    backgroundColor: '#FEE2E2',
-    color: '#991B1B',
-  },
-  comentarioTexto: {
-    fontSize: 13,
-    color: colors.text,
-    fontStyle: 'italic',
-  },
-  agradecimientoBox: {
-    marginTop: 4,
-    paddingTop: 4,
+  valoracion: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  agradecimientoLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.primaryDark,
+  pendiente: {
+    gap: spacing.xs,
+  },
+  caja: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md - 4,
+    gap: spacing.xs + 2,
+  },
+  cajaRecibida: {
+    backgroundColor: colors.primarySoft,
+  },
+  cajaTitulo: {
+    ...typography.label,
+    color: colors.text,
+    flex: 1,
+  },
+  comentario: {
+    ...typography.body,
+    fontStyle: 'italic',
+    color: colors.textSecondary,
+  },
+  agradecimiento: {
+    flexDirection: 'row',
+    gap: spacing.xs + 2,
+    alignItems: 'flex-start',
   },
   agradecimientoTexto: {
-    fontSize: 12,
+    ...typography.caption,
+    flex: 1,
     color: colors.primaryDark,
-    fontStyle: 'italic',
   },
-  pendienteBox: {
-    backgroundColor: '#FEF3C7',
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    gap: spacing.sm,
-  },
-  pendienteInfo: {
-    gap: 2,
-  },
-  pendienteTitulo: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#92400E',
-  },
-  pendienteSub: {
-    fontSize: 12,
-    color: '#B45309',
-  },
-  plazoVencido: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontStyle: 'italic',
-    paddingVertical: spacing.xs,
-  },
-  recibidaBox: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    marginTop: 4,
-    gap: 4,
-  },
-  recibidaTitulo: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textMuted,
+  ayuda: {
+    ...typography.caption,
   },
 });
-

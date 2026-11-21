@@ -63,7 +63,8 @@ public class PublicacionController {
 
     @GetMapping("/publicaciones")
     public PageResponse<PublicacionResumenResponse> buscar(
-            @RequestParam("tipoBuscado") String tipoBuscado,
+            @RequestAttribute("userId") String userId,
+            @RequestParam(value = "tipoBuscado", required = false) String tipoBuscado,
             @RequestParam(value = "categoria", required = false) String categoria,
             @RequestParam(value = "texto", required = false) String texto,
             @RequestParam(value = "barrioId", required = false) String barrioId,
@@ -77,7 +78,7 @@ public class PublicacionController {
             @RequestParam(value = "page", required = false) Integer page,
             @RequestParam(value = "size", required = false) Integer size) {
         return publicacionService.buscar(
-                tipoBuscado, categoria, texto, barrioId, lat, lng, radioKm, rango, desde, hasta, orden, page, size);
+                userId, tipoBuscado, categoria, texto, barrioId, lat, lng, radioKm, rango, desde, hasta, orden, page, size);
     }
 
     @GetMapping("/publicaciones/{id}")

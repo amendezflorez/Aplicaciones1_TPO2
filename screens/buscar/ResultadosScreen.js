@@ -1,54 +1,101 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import BarrioOUbicacionPicker from '../../components/BarrioOUbicacionPicker';
+import { Ionicons } from '@expo/vector-icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
-import CategoriaPicker from '../../components/CategoriaPicker';
-import ErrorText from '../../components/ErrorText';
-import Loading from '../../components/Loading';
+import Card from '../../components/Card';
+import Chip from '../../components/Chip';
+import PermisoDenegado from '../../components/PermisoDenegado';
 import PublicationCard from '../../components/PublicationCard';
-import RangoFechaPicker from '../../components/RangoFechaPicker';
+import RefinarBusquedaSheet from '../../components/RefinarBusquedaSheet';
 import Screen from '../../components/Screen';
+import { CardSkeleton, EmptyState, ErrorState, InlineMessage } from '../../components/StateViews';
 import { SEARCH_PAGE_SIZE } from '../../config/constants';
-import { colors, radius, spacing } from '../../config/theme';
+import { colors, spacing, typography } from '../../config/theme';
 import { useConnectivity } from '../../hooks/useConnectivity';
+import { useToast } from '../../hooks/useToast';
 import { useUbicacionActual } from '../../hooks/useUbicacionActual';
 import { crearAlerta } from '../../services/alertasService';
 import { esErrorDeRed, getErrorMessage } from '../../services/errors';
 import { guardarResultados, obtenerResultadosGuardados } from '../../services/offline/resultadosCache';
 import { buscarPublicaciones } from '../../services/publicacionesService';
-import { getBarrios } from '../../services/userService';
-import { formatHaceCuanto } from '../../utils/publicacionFormatters';
+import { claveDeFiltros, criteriosDeFiltros, haversineKm, usaUbicacion } from '../../utils/busqueda';
+import { formatFechaHora, formatHaceCuanto } from '../../utils/publicacionFormatters';
 
-// Listado paginado + refinar + ordenar (sección 4.2 del plan). "cercanos" solo se habilita
-// si los filtros activos ya traen lat/lng (se usó ubicación en el buscador o al refinar).
-// Sin conexión, "Refinar" y "Cercanos" se deshabilitan (Punto 6): ambos son una búsqueda
-// nueva en el backend, y rehacerlos sobre la primera página guardada (≤ SEARCH_PAGE_SIZE
-// ítems) daría un resultado parcial que parece completo.
+// Listado paginado + refinar + ordenar (Punto 3). Estados excluyentes: cargando (esqueleto)
+// -> error (con reintentar) -> vacío (con acciones) -> lista. "Cercanos" necesita la
+// ubicación de la persona: si los filtros no la traen, se pide al tocar el orden.
+// Sin conexión, Refinar y Cercanos se deshabilitan (Punto 6): ambos son una búsqueda nueva
+// en el backend, y rehacerlos sobre la primera página guardada (≤ SEARCH_PAGE_SIZE ítems)
+// daría un resultado parcial que parece completo.
 export default function ResultadosScreen({ route, navigation }) {
+  const toast = useToast();
   const { sinConexion } = useConnectivity();
   const [filtros, setFiltros] = useState(route.params.filtros);
-  const [orden, setOrden] = useState('recientes');
+  const [barrioNombre, setBarrioNombre] = useState(route.params.barrioNombre ?? null);
+  const [orden, setOrden] = useState(usaUbicacion(route.params.filtros) ? 'cercanos' : 'recientes');
+  // Ubicación pedida solo para ordenar por cercanía (cuando los filtros no traen una).
+  const [ubicacionOrden, setUbicacionOrden] = useState(null);
   const [items, setItems] = useState([]);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [refineVisible, setRefineVisible] = useState(false);
-  // Punto 6 (sección 4.3 del plan): no-null cuando lo que se muestra viene del caché (sin
-  // conexión, o la request falló por red), no de un fetch recién hecho —
-  // { coincide, resumen, cacheadoEn } de services/offline/resultadosCache.js. Desactiva la
-  // paginación (no tiene sentido pedir "más" de un snapshot fijo) y muestra el aviso.
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [guardandoAlerta, setGuardandoAlerta] = useState(false);
+  // Clave de la búsqueda para la que ya se guardó la alerta: al cambiar los filtros deja de coincidir.
+  const [alertaGuardadaPara, setAlertaGuardadaPara] = useState(null);
+  // Punto 6: no-null cuando lo que se muestra viene del caché (sin conexión, o la request
+  // falló por red) — { coincide, resumen, cacheadoEn }. Desactiva la paginación (no tiene
+  // sentido pedir "más" de un snapshot fijo) y muestra el aviso con la hora.
   const [cache, setCache] = useState(null);
+  const pedido = useRef(0); // descarta respuestas de una búsqueda que ya quedó vieja
 
-  const tieneUbicacion = filtros.lat != null && filtros.lng != null;
+  // Si se navega a Resultados con otros filtros estando ya abierta (p. ej. tocar una alerta),
+  // la pantalla no se remonta: se reinicia el estado al cambiar los params.
+  const [filtrosRuta, setFiltrosRuta] = useState(route.params.filtros);
+  if (route.params.filtros !== filtrosRuta) {
+    setFiltrosRuta(route.params.filtros);
+    setFiltros(route.params.filtros);
+    setBarrioNombre(route.params.barrioNombre ?? null);
+    setOrden(usaUbicacion(route.params.filtros) ? 'cercanos' : 'recientes');
+    setUbicacionOrden(null);
+    setItems([]);
+    setPage(0);
+    setCache(null);
+    setError('');
+    setLoading(true);
+  }
+
+  const {
+    cargando: cargandoUbicacion,
+    error: errorUbicacion,
+    obtenerUbicacion,
+    limpiarUbicacion,
+  } = useUbicacionActual();
+
+  const esExplorar = filtros.tipoBuscado === 'todos';
+  const alertaGuardada = alertaGuardadaPara === claveDeFiltros(filtros);
+  const puedeAlerta = !esExplorar;
+
+  // Coordenadas vigentes: las de los filtros, o las pedidas para ordenar por cercanía.
+  const coords = usaUbicacion(filtros)
+    ? { lat: filtros.lat, lng: filtros.lng }
+    : orden === 'cercanos'
+      ? ubicacionOrden
+      : null;
+
+  // Lo que se manda al backend y se usa como clave del caché offline.
+  const consulta = useMemo(
+    () => ({ ...filtros, lat: coords?.lat, lng: coords?.lng }),
+    [filtros, coords?.lat, coords?.lng]
+  );
 
   const cargarDesdeCache = useCallback(
-    async (mensajeSiNoHay) => {
-      setLoading(true);
-      const guardado = await obtenerResultadosGuardados(filtros, orden);
-      setLoading(false);
+    async (id, mensajeSiNoHay) => {
+      const guardado = await obtenerResultadosGuardados(consulta, orden);
+      if (id !== pedido.current) return;
       if (guardado) {
         setItems(guardado.data);
         setTotal(guardado.total);
@@ -62,334 +109,381 @@ export default function ResultadosScreen({ route, navigation }) {
         setError(mensajeSiNoHay);
       }
     },
-    [filtros, orden]
+    [consulta, orden]
   );
 
   const cargarPagina = useCallback(
     async (pageNum, append) => {
-      if (sinConexion) {
-        await cargarDesdeCache('No hay conexión y todavía no guardamos resultados de una búsqueda anterior.');
-        return;
-      }
+      const id = ++pedido.current;
       try {
         if (append) setLoadingMore(true);
-        else setLoading(true);
-        const resultado = await buscarPublicaciones({
-          ...filtros,
-          orden,
-          page: pageNum,
-          size: SEARCH_PAGE_SIZE,
-        });
+        else if (!refreshing) setLoading(true);
+        if (sinConexion) {
+          await cargarDesdeCache(id, 'No hay conexión y todavía no guardamos resultados de una búsqueda anterior.');
+          return;
+        }
+        const resultado = await buscarPublicaciones({ ...consulta, orden, page: pageNum, size: SEARCH_PAGE_SIZE });
+        if (id !== pedido.current) return;
         setItems((actuales) => (append ? [...actuales, ...resultado.data] : resultado.data));
         setTotal(resultado.total);
         setPage(resultado.page);
         setError('');
         setCache(null);
         // Solo la primera página de cada búsqueda: alcanza con "los últimos resultados
-        // cargados" (sección 4.3 del plan), no hace falta cachear todo el scroll
-        // acumulado de "cargar más".
-        if (!append) guardarResultados({ filtros, orden, data: resultado.data, total: resultado.total });
+        // cargados", no hace falta cachear todo el scroll acumulado de "cargar más".
+        if (!append) guardarResultados({ filtros: consulta, orden, data: resultado.data, total: resultado.total });
       } catch (e) {
+        if (id !== pedido.current) return;
         if (esErrorDeRed(e)) {
-          await cargarDesdeCache(getErrorMessage(e));
+          if (append) {
+            toast.error(getErrorMessage(e));
+          } else {
+            await cargarDesdeCache(id, getErrorMessage(e));
+          }
           return;
         }
-        setError(getErrorMessage(e));
+        if (append) toast.error(getErrorMessage(e));
+        else {
+          setItems([]);
+          setTotal(0);
+          setError(getErrorMessage(e));
+        }
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (id === pedido.current) {
+          setLoading(false);
+          setLoadingMore(false);
+          setRefreshing(false);
+        }
       }
     },
-    [filtros, orden, sinConexion, cargarDesdeCache]
+    [consulta, orden, sinConexion, cargarDesdeCache, refreshing, toast]
   );
 
+  // Una búsqueda nueva cada vez que cambian los criterios, el orden o la conexión.
   useEffect(() => {
-    cargarPagina(0, false);
+    let vigente = true;
+    Promise.resolve().then(() => vigente && cargarPagina(0, false));
+    return () => {
+      vigente = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtros, orden, sinConexion]);
+  }, [consulta, orden, sinConexion]);
+
+  const reintentar = () => cargarPagina(0, false);
+
+  const refrescar = () => {
+    setRefreshing(true);
+    cargarPagina(0, false);
+  };
 
   const pedirSiguientePagina = () => {
-    if (loadingMore || loading || cache) return;
+    if (loadingMore || loading || cache || error) return;
     if (items.length >= total) return;
     cargarPagina(page + 1, true);
   };
 
-  const cambiarOrden = (nuevoOrden) => {
-    if (nuevoOrden === 'cercanos' && (!tieneUbicacion || sinConexion)) return;
-    setOrden(nuevoOrden);
-  };
+  const elegirRecientes = () => setOrden('recientes');
 
-  // "Guardar como alerta" necesita conexión (Punto 6, sección 5 del plan).
-  const guardarComoAlerta = async () => {
-    try {
-      await crearAlerta(filtros);
-      Alert.alert('Listo', 'Guardamos esta búsqueda como alerta. Te vamos a avisar de novedades.');
-    } catch (e) {
-      Alert.alert('No se pudo guardar', getErrorMessage(e));
+  const elegirCercanos = async () => {
+    if (sinConexion) {
+      toast.info('Necesitás conexión para ordenar por cercanía.');
+      return;
+    }
+    if (coords || usaUbicacion(filtros)) {
+      setOrden('cercanos');
+      return;
+    }
+    const obtenidas = await obtenerUbicacion();
+    if (obtenidas) {
+      setUbicacionOrden(obtenidas);
+      setOrden('cercanos');
     }
   };
 
-  // Punto 5: precarga el wizard con lo que la persona ya tipeó acá (sección 4 de
-  // PLAN_puntos_5_y_6.md) — tipoBuscado es literalmente "perdí/encontré" tal como lo
-  // eligió en el paso 1 del buscador, mismo valor que espera el wizard como "tipo".
-  const irAPublicar = () => {
-    navigation.navigate('Publicar', {
-      screen: 'PublicarWizard',
-      params: { tipo: filtros.tipoBuscado, categoria: filtros.categoria, barrioId: filtros.barrioId },
-    });
+  const aplicarFiltros = (nuevosFiltros, nombreBarrio) => {
+    setFiltros(nuevosFiltros);
+    setBarrioNombre(nombreBarrio);
+    setSheetVisible(false);
+    if (orden === 'cercanos' && !usaUbicacion(nuevosFiltros) && !ubicacionOrden) setOrden('recientes');
+    if (usaUbicacion(nuevosFiltros)) setOrden('cercanos');
   };
+
+  const guardarComoAlerta = async () => {
+    if (sinConexion) {
+      toast.info('Necesitás conexión para guardar una alerta.');
+      return;
+    }
+    if (!puedeAlerta) {
+      toast.info('Para crear una alerta elegí si perdiste o encontraste algo (en Refinar).');
+      return;
+    }
+    setGuardandoAlerta(true);
+    try {
+      await crearAlerta({
+        tipoBuscado: filtros.tipoBuscado,
+        categoria: filtros.categoria,
+        texto: filtros.texto,
+        barrioId: filtros.barrioId,
+      });
+      setAlertaGuardadaPara(claveDeFiltros(filtros));
+      toast.success('Alerta guardada. Te avisamos cuando aparezca algo parecido.');
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setGuardandoAlerta(false);
+    }
+  };
+
+  // Precarga el wizard de publicar con lo que la persona ya tipeó acá. tipoBuscado es
+  // literalmente "perdí/encontré", el mismo valor que el wizard espera como "tipo".
+  const irAPublicar = () => {
+    const params = {};
+    if (!esExplorar) params.tipo = filtros.tipoBuscado;
+    if (filtros.categoria) params.categoria = filtros.categoria;
+    if (filtros.barrioId) params.barrioId = filtros.barrioId;
+    navigation.navigate('Publicar', { screen: 'PublicarWizard', params });
+  };
+
+  const criterios = criteriosDeFiltros(filtros, barrioNombre);
+  const mostrandoLista = !loading && !error && items.length > 0;
+  const hayMas = items.length < total;
+
+  const encabezado = (
+    <View style={styles.encabezado}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.criterios}>
+        {criterios.map((c) => (
+          <Chip key={c.key} label={c.label} icon={c.icon} tone="primary" />
+        ))}
+      </ScrollView>
+
+      <View style={styles.fila}>
+        <Text style={styles.contador} accessibilityRole="header" numberOfLines={1}>
+          {loading ? 'Buscando…' : error ? 'Resultados' : `${total} ${total === 1 ? 'resultado' : 'resultados'}`}
+        </Text>
+        <View style={styles.acciones}>
+          {puedeAlerta ? (
+            <Button
+              title={alertaGuardada ? 'Alerta activa' : 'Alerta'}
+              icon={alertaGuardada ? 'notifications' : 'notifications-outline'}
+              variant="secondary"
+              size="sm"
+              onPress={guardarComoAlerta}
+              loading={guardandoAlerta}
+              disabled={alertaGuardada || sinConexion}
+            />
+          ) : null}
+          <Button
+            title="Refinar"
+            icon="options-outline"
+            variant="secondary"
+            size="sm"
+            onPress={() => setSheetVisible(true)}
+            disabled={sinConexion}
+          />
+        </View>
+      </View>
+
+      <View style={styles.orden}>
+        <Text style={styles.ordenLabel}>Ordenar por</Text>
+        <Chip label="Recientes" icon="time-outline" selected={orden === 'recientes'} onPress={elegirRecientes} size="md" />
+        <Chip
+          label={cargandoUbicacion ? 'Buscando…' : 'Cercanos'}
+          icon="locate-outline"
+          selected={orden === 'cercanos'}
+          onPress={elegirCercanos}
+          style={sinConexion ? styles.deshabilitado : undefined}
+        />
+      </View>
+
+      {sinConexion ? (
+        <Text style={styles.aviso}>Necesitás conexión para refinar, ordenar por cercanía o crear alertas.</Text>
+      ) : null}
+
+      {errorUbicacion?.tipo === 'permiso' ? (
+        <View style={styles.permiso}>
+          <PermisoDenegado
+            icon="location-outline"
+            titulo="Necesitamos tu ubicación"
+            motivo="Para ordenar por cercanía necesitamos saber dónde estás. Habilitá el permiso en la configuración."
+          />
+          <Button title="Ahora no" variant="ghost" size="sm" onPress={limpiarUbicacion} />
+        </View>
+      ) : errorUbicacion ? (
+        <InlineMessage tone="warning" message={errorUbicacion.mensaje} />
+      ) : null}
+
+      {cache ? (
+        <InlineMessage
+          tone="warning"
+          message={
+            cache.coincide
+              ? `Sin conexión: mostramos los resultados guardados el ${formatFechaHora(new Date(cache.cacheadoEn).toISOString())} (${formatHaceCuanto(cache.cacheadoEn)}). Pueden estar desactualizados.`
+              : `Sin resultados guardados para esta búsqueda. Mostramos los de tu última búsqueda con conexión (${cache.resumen}), guardados el ${formatFechaHora(new Date(cache.cacheadoEn).toISOString())}. Pueden estar desactualizados.`
+          }
+        />
+      ) : null}
+    </View>
+  );
+
+  // Lo que se ve cuando no hay lista: esqueleto, error o vacío (uno solo a la vez).
+  const estadoSinLista = loading ? (
+    <CardSkeleton count={4} />
+  ) : error ? (
+    <ErrorState
+      title="No pudimos cargar los resultados"
+      message={error}
+      onRetry={reintentar}
+      retrying={refreshing}
+    />
+  ) : (
+    <EmptyState
+      title="No encontramos publicaciones"
+      message={
+        puedeAlerta
+          ? 'Probá sacando algún filtro, o guardá la búsqueda como alerta y te avisamos cuando aparezca algo.'
+          : 'Todavía no hay publicaciones con estos filtros. Probá con otros.'
+      }
+      actionLabel={esExplorar ? 'Publicar algo' : filtros.tipoBuscado === 'perdido' ? 'Publicar mi pérdida' : 'Publicar mi hallazgo'}
+      onAction={irAPublicar}
+      secondaryLabel={puedeAlerta ? (alertaGuardada ? 'Alerta guardada' : 'Guardar como alerta') : undefined}
+      onSecondary={alertaGuardada ? undefined : guardarComoAlerta}
+    />
+  );
+
+  const pie = mostrandoLista ? (
+    <View style={styles.pie}>
+      {loadingMore ? <ActivityIndicator color={colors.primary} style={styles.cargandoMas} /> : null}
+      {!hayMas && !cache ? <Text style={styles.finLista}>No hay más resultados</Text> : null}
+      {cache ? <Text style={styles.finLista}>Mostramos solo los resultados guardados</Text> : null}
+      {puedeAlerta && !hayMas ? (
+        <Card style={styles.alertaCard}>
+          <Ionicons name="notifications-outline" size={26} color={colors.primary} />
+          <View style={styles.alertaTextos}>
+            <Text style={styles.alertaTitulo}>¿No encontrás lo tuyo?</Text>
+            <Text style={styles.alertaTexto}>Guardá esta búsqueda y te avisamos cuando aparezca algo parecido.</Text>
+          </View>
+          <Button
+            title={alertaGuardada ? 'Guardada' : 'Guardar'}
+            variant="secondary"
+            size="sm"
+            onPress={guardarComoAlerta}
+            loading={guardandoAlerta}
+            disabled={alertaGuardada || sinConexion}
+          />
+        </Card>
+      ) : null}
+    </View>
+  ) : null;
 
   return (
     <Screen scroll={false}>
-      <View style={styles.barraOrden}>
-        <TouchableOpacity
-          style={[styles.ordenChip, orden === 'recientes' && styles.ordenChipActive]}
-          onPress={() => cambiarOrden('recientes')}
-        >
-          <Text style={[styles.ordenText, orden === 'recientes' && styles.ordenTextActive]}>Recientes</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.ordenChip,
-            orden === 'cercanos' && styles.ordenChipActive,
-            (!tieneUbicacion || sinConexion) && styles.ordenChipDisabled,
-          ]}
-          onPress={() => cambiarOrden('cercanos')}
-          disabled={!tieneUbicacion || sinConexion}
-        >
-          <Text style={[styles.ordenText, orden === 'cercanos' && styles.ordenTextActive]}>Cercanos</Text>
-        </TouchableOpacity>
-        <View style={styles.espacio} />
-        <Button
-          title="Refinar"
-          variant="secondary"
-          onPress={() => setRefineVisible(true)}
-          disabled={sinConexion}
-        />
-      </View>
-      {sinConexion ? (
-        <Text style={styles.avisoSinConexion}>Necesitás conexión para refinar u ordenar por cercanía.</Text>
-      ) : null}
-
-      {cache?.coincide ? (
-        <Text style={styles.avisoCache}>
-          Mostrando los últimos resultados guardados {formatHaceCuanto(cache.cacheadoEn)} — pueden no estar
-          actualizados.
-        </Text>
-      ) : cache ? (
-        <Text style={styles.avisoCache}>
-          No tenemos guardados resultados para esta búsqueda. Mostrando los de tu última búsqueda con conexión: {cache.resumen}{' '}
-          (guardados {formatHaceCuanto(cache.cacheadoEn)}) — pueden no estar actualizados.
-        </Text>
-      ) : null}
-      <ErrorText message={error} />
-
-      {loading ? (
-        <Loading />
-      ) : items.length === 0 ? (
-        <View style={styles.vacio}>
-          <Text style={styles.vacioTexto}>No encontramos publicaciones con estos filtros.</Text>
-          <Button
-            title={filtros.tipoBuscado === 'perdido' ? 'Publicar lo que perdí' : 'Publicar lo que encontré'}
-            onPress={irAPublicar}
+      <FlatList
+        data={mostrandoLista ? items : []}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <PublicationCard
+            publicacion={item}
+            distanciaKm={coords ? haversineKm(coords.lat, coords.lng, item.lat, item.lng) : undefined}
+            onPress={() => navigation.navigate('DetallePublicacion', { id: item.id })}
           />
-          <Button
-            title="Guardar esta búsqueda como alerta"
-            variant="secondary"
-            onPress={guardarComoAlerta}
-            disabled={sinConexion}
+        )}
+        ListHeaderComponent={encabezado}
+        ListEmptyComponent={estadoSinLista}
+        ListFooterComponent={pie}
+        contentContainerStyle={styles.lista}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onEndReachedThreshold={0.4}
+        onEndReached={pedirSiguientePagina}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refrescar}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
-          {sinConexion ? (
-            <Text style={styles.avisoSinConexion}>Necesitás conexión para guardar una alerta.</Text>
-          ) : null}
-        </View>
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.lista}
-          renderItem={({ item }) => (
-            <PublicationCard
-              publicacion={item}
-              onPress={() => navigation.navigate('DetallePublicacion', { id: item.id })}
-            />
-          )}
-          onEndReachedThreshold={0.4}
-          onEndReached={pedirSiguientePagina}
-          ListFooterComponent={loadingMore ? <ActivityIndicator style={styles.footerLoader} /> : null}
-        />
-      )}
+        }
+      />
 
-      <RefinarModal
-        visible={refineVisible}
-        filtrosIniciales={filtros}
-        onClose={() => setRefineVisible(false)}
-        onAplicar={(nuevosFiltros) => {
-          setFiltros(nuevosFiltros);
-          setRefineVisible(false);
-        }}
+      <RefinarBusquedaSheet
+        visible={sheetVisible}
+        filtros={filtros}
+        barrioNombre={barrioNombre}
+        puedeCambiarTipo={esExplorar || route.params.filtros.tipoBuscado === 'todos'}
+        onClose={() => setSheetVisible(false)}
+        onAplicar={aplicarFiltros}
       />
     </Screen>
   );
 }
 
-// Reabre los mismos controles de los pasos 2-4 del wizard, sin volver al paso 1
-// (sección 4.2 del plan): tipoBuscado no se puede cambiar acá, solo categoría/texto/
-// lugar/fecha.
-function RefinarModal({ visible, filtrosIniciales, onClose, onAplicar }) {
-  const [categoria, setCategoria] = useState(filtrosIniciales.categoria ?? null);
-  const [barrioId, setBarrioId] = useState(filtrosIniciales.barrioId ?? null);
-  const [barrios, setBarrios] = useState([]);
-  const [rango, setRango] = useState(filtrosIniciales.rango ?? null);
-  const [desde, setDesde] = useState(filtrosIniciales.desde ? new Date(filtrosIniciales.desde) : null);
-  const [hasta, setHasta] = useState(filtrosIniciales.hasta ? new Date(filtrosIniciales.hasta) : null);
-  const { ubicacion, cargando, error: errorUbicacion, obtenerUbicacion, abrirConfiguracion } = useUbicacionActual();
-
-  useEffect(() => {
-    if (visible) getBarrios().then(setBarrios).catch(() => {});
-  }, [visible]);
-
-  const tieneUbicacionInicial = filtrosIniciales.lat != null;
-  const [ubicacionActiva, setUbicacionActiva] = useState(tieneUbicacionInicial);
-
-  const usarUbicacion = async () => {
-    const coords = await obtenerUbicacion();
-    if (coords) {
-      setBarrioId(null);
-      setUbicacionActiva(true);
-    }
-  };
-
-  const aplicar = () => {
-    onAplicar({
-      ...filtrosIniciales,
-      categoria: categoria ?? undefined,
-      barrioId: ubicacionActiva ? undefined : (barrioId ?? undefined),
-      lat: ubicacionActiva ? (ubicacion?.lat ?? filtrosIniciales.lat) : undefined,
-      lng: ubicacionActiva ? (ubicacion?.lng ?? filtrosIniciales.lng) : undefined,
-      rango: rango ?? undefined,
-      desde: rango === 'personalizado' ? desde?.toISOString() : undefined,
-      hasta: rango === 'personalizado' ? hasta?.toISOString() : undefined,
-    });
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.modal}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitulo}>Refinar búsqueda</Text>
-          <CategoriaPicker selected={categoria} onSelect={setCategoria} />
-          <BarrioOUbicacionPicker
-            barrios={barrios}
-            barrioId={barrioId}
-            onSelectBarrio={(b) => {
-              setBarrioId(b.id);
-              setUbicacionActiva(false);
-            }}
-            ubicacion={ubicacionActiva ? (ubicacion ?? { lat: filtrosIniciales.lat, lng: filtrosIniciales.lng }) : null}
-            cargandoUbicacion={cargando}
-            error={errorUbicacion}
-            onUsarUbicacion={usarUbicacion}
-            onQuitarUbicacion={() => setUbicacionActiva(false)}
-            onAbrirConfiguracion={abrirConfiguracion}
-          />
-          <RangoFechaPicker
-            rango={rango}
-            onSelectRango={setRango}
-            desde={desde}
-            hasta={hasta}
-            onChangeDesde={setDesde}
-            onChangeHasta={setHasta}
-          />
-        </View>
-        <View style={styles.modalFooter}>
-          <Button title="Cancelar" variant="secondary" onPress={onClose} />
-          <Button title="Aplicar" onPress={aplicar} />
-        </View>
-      </SafeAreaView>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
-  avisoCache: {
-    fontSize: 13,
-    color: colors.accent,
-    fontWeight: '600',
+  lista: {
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
   },
-  avisoSinConexion: {
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'center',
+  encabezado: {
+    gap: spacing.md - 4,
   },
-  barraOrden: {
+  criterios: {
+    gap: spacing.sm,
+    paddingRight: spacing.md,
+  },
+  fila: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-  },
-  ordenChip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.round,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md - 4,
-  },
-  ordenChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  ordenChipDisabled: {
-    opacity: 0.4,
-  },
-  ordenText: {
-    fontSize: 13,
-    color: colors.text,
-  },
-  ordenTextActive: {
-    color: colors.white,
-    fontWeight: '600',
-  },
-  espacio: {
-    flex: 1,
-  },
-  lista: {
-    padding: spacing.md,
+    justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  footerLoader: {
+  contador: {
+    ...typography.heading,
+    flexShrink: 1,
+  },
+  acciones: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  orden: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  ordenLabel: {
+    ...typography.label,
+  },
+  deshabilitado: {
+    opacity: 0.45,
+  },
+  aviso: {
+    ...typography.caption,
+  },
+  permiso: {
+    gap: spacing.xs,
+  },
+  pie: {
+    gap: spacing.md,
+    alignItems: 'stretch',
+  },
+  cargandoMas: {
     marginVertical: spacing.md,
   },
-  vacio: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  vacioTexto: {
-    fontSize: 15,
-    color: colors.textMuted,
+  finLista: {
+    ...typography.caption,
     textAlign: 'center',
   },
-  modal: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  modalContent: {
-    flex: 1,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  modalTitulo: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  modalFooter: {
+  alertaCard: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.md,
+    alignItems: 'center',
+    gap: spacing.md - 4,
+  },
+  alertaTextos: {
+    flex: 1,
+    gap: 2,
+  },
+  alertaTitulo: {
+    ...typography.subheading,
+  },
+  alertaTexto: {
+    ...typography.caption,
   },
 });

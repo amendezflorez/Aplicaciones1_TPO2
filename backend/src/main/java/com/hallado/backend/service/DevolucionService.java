@@ -6,7 +6,9 @@ import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.EstadoReclamo;
 import com.hallado.backend.entity.Publicacion;
 import com.hallado.backend.entity.Reclamo;
+import com.hallado.backend.entity.TipoNotificacion;
 import com.hallado.backend.entity.TipoReclamo;
+import com.hallado.backend.entity.User;
 import com.hallado.backend.exception.ApiException;
 import com.hallado.backend.exception.ConflictException;
 import com.hallado.backend.exception.NotFoundException;
@@ -26,14 +28,17 @@ public class DevolucionService {
     private final PublicacionRepository publicacionRepository;
     private final ReclamoRepository reclamoRepository;
     private final CasoResueltoRepository casoResueltoRepository;
+    private final NotificacionService notificacionService;
 
     public DevolucionService(
             PublicacionRepository publicacionRepository,
             ReclamoRepository reclamoRepository,
-            CasoResueltoRepository casoResueltoRepository) {
+            CasoResueltoRepository casoResueltoRepository,
+            NotificacionService notificacionService) {
         this.publicacionRepository = publicacionRepository;
         this.reclamoRepository = reclamoRepository;
         this.casoResueltoRepository = casoResueltoRepository;
+        this.notificacionService = notificacionService;
     }
 
     @Transactional
@@ -77,15 +82,38 @@ public class DevolucionService {
         caso.setFechaResolucion(fechaResolucion);
         casoResueltoRepository.save(caso);
 
+        // Punto 2: la reputación se construye con las devoluciones concretadas. Sin esto
+        // el contador (y la insignia "Vecino solidario") nunca crecía para usuarios reales.
+        User devolvedor = caso.getDevolvedor();
+        devolvedor.setReturnsCount(devolvedor.getReturnsCount() + 1);
+
         List<Reclamo> reclamosActivos = new ArrayList<>();
         reclamosActivos.addAll(reclamoRepository.findByPublicacionIdAndEstado(
                 publicacionId, EstadoReclamo.PENDIENTE));
         reclamosActivos.addAll(reclamoRepository.findByPublicacionIdAndEstado(
                 publicacionId, EstadoReclamo.ACEPTADO));
-        reclamosActivos.stream()
+        List<Reclamo> descartados = reclamosActivos.stream()
                 .filter(otroReclamo -> !otroReclamo.getId().equals(reclamoId))
-                .forEach(otroReclamo -> otroReclamo.setEstado(EstadoReclamo.RECHAZADO));
+                .toList();
+        descartados.forEach(otroReclamo -> otroReclamo.setEstado(EstadoReclamo.RECHAZADO));
         reclamoRepository.saveAll(reclamosActivos);
+
+        // Punto 12: los demás reclamos cambiaron de estado (quedaron rechazados) y quien
+        // devolvió el objeto se entera de que la entrega quedó confirmada.
+        descartados.forEach(otro -> notificacionService.notificar(
+                otro.getAutor(),
+                TipoNotificacion.RECLAMO_RECHAZADO,
+                "Tu reclamo se cerró",
+                "«" + publicacion.getTitulo() + "» ya fue devuelto a otra persona.",
+                otro.getId(),
+                publicacionId));
+        notificacionService.notificar(
+                devolvedor,
+                TipoNotificacion.DEVOLUCION_CONFIRMADA,
+                "¡Devolución confirmada!",
+                "Se confirmó la entrega de «" + publicacion.getTitulo() + "». Gracias por ayudar. Ya podés valorar a la otra persona.",
+                reclamoId,
+                publicacionId);
 
         publicacion.setEstado(EstadoPublicacion.RESUELTA);
         publicacionRepository.save(publicacion);
