@@ -546,7 +546,17 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // que pudo antes de fallar.
   const encolarYSalir = async () => {
     terminadoRef.current = true;
-    await agregarACola(user.id, construirBorrador());
+    try {
+      await agregarACola(user.id, construirBorrador());
+    } catch {
+      // No se pudo guardar en la cola (almacenamiento lleno, etc.): el borrador sigue
+      // intacto (agregarACola no lo borra si falla), así que se vuelve a habilitar el
+      // autoguardado y se avisa en vez de mostrar un "guardamos tu publicación" falso.
+      terminadoRef.current = false;
+      setPublicando(false);
+      setErrorEnvio('No hay conexión y no pudimos guardar la publicación para enviarla después. Intentá de nuevo.');
+      return;
+    }
     setPublicando(false);
     Alert.alert(
       'Sin conexión',
