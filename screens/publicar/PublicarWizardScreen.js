@@ -473,7 +473,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
       const result = await ImagePicker.launchImageLibraryAsync({
         ...PICKER_OPTIONS_FOTO,
         allowsMultipleSelection: true,
-        // Recorta igual por si el dispositivo ignora selectionLimit: nunca más de 5.
+        // Recorta igual por si el dispositivo ignora selectionLimit: nunca más de MAX_FOTOS_PUBLICACION.
         selectionLimit: restantes,
       });
       if (!result.canceled) await agregarFotos((result.assets ?? []).slice(0, restantes));
