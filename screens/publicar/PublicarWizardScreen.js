@@ -164,6 +164,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
   // escribir el borrador después — si no, reaparece como "Publicación sin terminar" con el
   // mismo clientRequestId del ítem encolado, y descartarlo borraría sus fotos.
   const terminadoRef = useRef(false);
+  const enviandoRef = useRef(false); // candado contra doble envío, ver publicar()
   const [errorEnvio, setErrorEnvio] = useState('');
 
   const pasos = useMemo(() => pasosPara(tipo), [tipo]);
@@ -566,6 +567,22 @@ export default function PublicarWizardScreen({ route, navigation }) {
   };
 
   const publicar = async () => {
+    // Candado sincrónico contra el doble toque: `publicando` es estado de React y recién
+    // deshabilita el botón en el próximo render, así que dos toques en el mismo frame
+    // arrancaban dos envíos (fotos subidas dos veces y dos POST con el mismo
+    // clientRequestId, donde el segundo choca con la restricción única del backend y
+    // muestra un error aunque la publicación sí se creó). Una ref cambia en el acto.
+    // terminadoRef: ya se publicó o encoló; no se vuelve a mandar desde esta pantalla.
+    if (enviandoRef.current || terminadoRef.current) return;
+    enviandoRef.current = true;
+    try {
+      await publicarSinCandado();
+    } finally {
+      enviandoRef.current = false;
+    }
+  };
+
+  const publicarSinCandado = async () => {
     setPublicando(true);
     setErrorEnvio('');
 
