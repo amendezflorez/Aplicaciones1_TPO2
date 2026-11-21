@@ -251,8 +251,27 @@ export default function PublicarWizardScreen({ route, navigation }) {
       }
     };
 
+    const retomar = async (guardado) => {
+      try {
+        await aplicarBorrador(guardado);
+      } catch (e) {
+        // Nunca dejar la pantalla colgada en <Loading />: si algo del borrador no se pudo
+        // restaurar, se arranca de cero con el prefill.
+        console.warn('No se pudo restaurar el borrador', e);
+        if (vigente) iniciarDesdeParams();
+      }
+      if (vigente) setListo(true);
+    };
+
     cargarBorrador(user.id).then((guardado) => {
       if (!vigente) return;
+      // "Editar" desde Mis publicaciones (ítem de la cola con error) llega con
+      // retomar:true: la persona ya eligió editar esa publicación, así que se abre directo
+      // en vez de preguntarle "¿Retomar o descartar?" (Descartar ahí era confuso).
+      if (guardado && route.params?.retomar) {
+        retomar(guardado);
+        return;
+      }
       if (guardado) {
         Alert.alert(
           'Publicación sin terminar',
@@ -280,17 +299,7 @@ export default function PublicarWizardScreen({ route, navigation }) {
             },
             {
               text: 'Retomar',
-              onPress: async () => {
-                try {
-                  await aplicarBorrador(guardado);
-                } catch (e) {
-                  // Nunca dejar la pantalla colgada en <Loading />: si algo del borrador
-                  // no se pudo restaurar, se arranca de cero con el prefill.
-                  console.warn('No se pudo restaurar el borrador', e);
-                  if (vigente) iniciarDesdeParams();
-                }
-                if (vigente) setListo(true);
-              },
+              onPress: () => retomar(guardado),
             },
           ],
           { cancelable: false }

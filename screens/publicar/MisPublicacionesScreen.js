@@ -83,8 +83,14 @@ export default function MisPublicacionesScreen({ navigation }) {
   const editarPendiente = async (item) => {
     setAccionEnCurso(item.clientRequestId);
     try {
-      await pasarAEdicion(user.id, item.clientRequestId);
-      navigation.navigate('PublicarWizard');
+      // retomar:true → el wizard abre directo con estos datos, sin el aviso
+      // "¿Retomar o descartar?". Si pasarAEdicion no encontró el ítem, no se navega.
+      if (await pasarAEdicion(user.id, item.clientRequestId)) {
+        navigation.navigate('PublicarWizard', { retomar: true });
+      }
+    } catch (e) {
+      console.warn('No se pudo pasar la publicación a edición', e);
+      Alert.alert('No se pudo abrir la publicación', 'Intentá de nuevo.');
     } finally {
       setAccionEnCurso(null);
       setCola(await listarCola(user.id));
