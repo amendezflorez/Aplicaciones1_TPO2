@@ -1,8 +1,12 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { setSinConexion } from '../services/offline/estadoConexion';
+import { backendAlcanzable, setSinConexion } from '../services/offline/estadoConexion';
 
 export const ConnectivityContext = createContext(null);
+
+const REINTENTO_INICIAL_MS = 10000;
+const REINTENTO_MAX_MS = 60000;
 
 // Punto 6 (sección 4.1 de PLAN_puntos_5_y_6.md). `estado` es 'online' | 'offline' |
 // 'desconocido', no un simple booleano, porque isInternetReachable de NetInfo puede ser
@@ -38,6 +42,54 @@ export function ConnectivityProvider({ children }) {
     });
     return unsubscribe;
   }, []);
+
+  // Salida del "forzado offline". Antes solo se levantaba con un evento de NetInfo, pero
+  // NetInfo avisa únicamente cuando algo CAMBIA: si el wifi seguía igual (p. ej. el
+  // backend se cayó un momento y volvió), la app quedaba "sin conexión" para siempre — no
+  // se procesaba la cola, Mis publicaciones no consultaba al servidor, todo deshabilitado.
+  // Ahora, mientras esté forzado (y NetInfo no diga que directamente no hay red, en cuyo
+  // caso sí va a avisar al volver), se le pregunta al backend con backoff: 10s, 20s, 40s y
+  // después cada 60s como máximo — nunca más de un ping a la vez. Al volver la app a primer
+  // plano se prueba en el acto. Cuando responde, `estado` pasa de 'offline' a online y el
+  // efecto de AuthContext que ya escucha esa transición procesa la cola de pendientes.
+  useEffect(() => {
+    if (!forzadoOffline || netInfoState.isConnected === false) return undefined;
+    let cancelado = false;
+    let enCurso = false;
+    let timer = null;
+    let espera = REINTENTO_INICIAL_MS;
+
+    const programar = () => {
+      clearTimeout(timer);
+      timer = setTimeout(probar, espera);
+    };
+    async function probar() {
+      if (enCurso || cancelado) return;
+      enCurso = true;
+      const ok = await backendAlcanzable();
+      enCurso = false;
+      if (cancelado) return;
+      if (ok) {
+        setForzadoOffline(false);
+        return;
+      }
+      espera = Math.min(espera * 2, REINTENTO_MAX_MS);
+      programar();
+    }
+
+    programar();
+    const sub = AppState.addEventListener('change', (estadoApp) => {
+      if (estadoApp !== 'active') return;
+      clearTimeout(timer);
+      espera = REINTENTO_INICIAL_MS;
+      probar();
+    });
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, [forzadoOffline, netInfoState.isConnected]);
 
   const estado = useMemo(() => {
     if (forzadoOffline) return 'offline';
