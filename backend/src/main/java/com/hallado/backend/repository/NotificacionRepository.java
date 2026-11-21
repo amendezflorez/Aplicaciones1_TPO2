@@ -12,6 +12,8 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Stri
 
     List<Notificacion> findTop100ByUsuarioIdOrderByCreadaEnDesc(String usuarioId);
 
+    List<Notificacion> findByUsuarioId(String usuarioId);
+
     long countByUsuarioIdAndLeidaFalse(String usuarioId);
 
     Optional<Notificacion> findByIdAndUsuarioId(String id, String usuarioId);
