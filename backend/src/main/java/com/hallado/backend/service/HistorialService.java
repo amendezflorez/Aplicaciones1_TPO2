@@ -19,6 +19,7 @@ import com.hallado.backend.repository.UserRepository;
 import com.hallado.backend.repository.ValoracionRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class HistorialService {
 
     private static final Duration PLAZO_VALORACION = Duration.ofDays(7);
+    private static final int MAX_MENSAJE = 250;
 
     private final CasoResueltoRepository casoResueltoRepository;
     private final ValoracionRepository valoracionRepository;
@@ -49,10 +51,17 @@ public class HistorialService {
 
     @Transactional(readOnly = true)
     public List<CasoHistorialResponse> listar(String userId, String tipo, String desdeRaw, String hastaRaw) {
-        Instant desde = (desdeRaw != null && !desdeRaw.isBlank()) ? parseInstant(desdeRaw) : null;
-        Instant hasta = (hastaRaw != null && !hastaRaw.isBlank()) ? parseInstant(hastaRaw) : null;
+        if (tipo != null && !tipo.isBlank() && !tipo.equals("devolvi") && !tipo.equals("recupere")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "El tipo de caso tiene que ser \"devolvi\" o \"recupere\".");
+        }
+        String tipoFiltro = (tipo == null || tipo.isBlank()) ? null : tipo;
+        Instant desde = (desdeRaw != null && !desdeRaw.isBlank()) ? parseInstant(desdeRaw, "desde") : null;
+        Instant hasta = (hastaRaw != null && !hastaRaw.isBlank()) ? parseInstant(hastaRaw, "hasta") : null;
+        if (desde != null && hasta != null && desde.isAfter(hasta)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "La fecha \"desde\" no puede ser posterior a \"hasta\".");
+        }
 
-        List<CasoResuelto> casos = casoResueltoRepository.buscarHistorial(userId, tipo, desde, hasta);
+        List<CasoResuelto> casos = casoResueltoRepository.buscarHistorial(userId, tipoFiltro, desde, hasta);
         return casos.stream().map(c -> toResponse(c, userId)).toList();
     }
 
@@ -67,6 +76,9 @@ public class HistorialService {
 
     public CasoHistorialResponse valorar(String userId, String casoId, ValorarRequest request) {
         CasoResuelto caso = casoResueltoRepository.findById(casoId).orElseThrow(NotFoundException::new);
+
+        validarMensaje(request.comentario(), "El mensaje");
+        validarMensaje(request.agradecimientoPublico(), "El agradecimiento");
 
         boolean esDevolvedor = caso.getDevolvedor().getId().equals(userId);
         boolean esRecuperador = caso.getRecuperador().getId().equals(userId);
@@ -179,11 +191,22 @@ public class HistorialService {
                 v.getCreadaEn());
     }
 
-    private Instant parseInstant(String raw) {
+    // Una fecha inválida es un error del cliente: se informa (400) en vez de ignorar el filtro
+    // y devolver todo el historial como si no se hubiera pedido nada.
+    private Instant parseInstant(String raw, String campo) {
         try {
-            return Instant.parse(raw);
-        } catch (Exception e) {
-            return null;
+            return Instant.parse(raw.trim());
+        } catch (DateTimeParseException e) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "La fecha \"" + campo + "\" no es válida. Usá el formato 2026-11-21T00:00:00Z.");
+        }
+    }
+
+    private void validarMensaje(String texto, String nombre) {
+        if (texto != null && texto.trim().length() > MAX_MENSAJE) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, nombre + " no puede superar los " + MAX_MENSAJE + " caracteres.");
         }
     }
 }

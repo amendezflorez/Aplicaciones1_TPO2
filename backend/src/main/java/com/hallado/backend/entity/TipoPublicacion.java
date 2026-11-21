@@ -31,7 +31,7 @@ public enum TipoPublicacion {
                 return t;
             }
         }
-        throw new ApiException(HttpStatus.BAD_REQUEST, "tipo/tipoBuscado inválido: " + value);
+        throw new ApiException(HttpStatus.BAD_REQUEST, "Elegí si perdiste o encontraste algo.");
     }
 
     public TipoPublicacion opuesto() {

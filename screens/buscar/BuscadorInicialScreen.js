@@ -1,23 +1,32 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import BarrioOUbicacionPicker from '../../components/BarrioOUbicacionPicker';
 import Button from '../../components/Button';
+import Chip from '../../components/Chip';
 import CategoriaPicker from '../../components/CategoriaPicker';
-import ErrorText from '../../components/ErrorText';
 import RangoFechaPicker from '../../components/RangoFechaPicker';
 import Screen from '../../components/Screen';
+import SectionHeader from '../../components/SectionHeader';
+import { InlineMessage } from '../../components/StateViews';
 import TextField from '../../components/TextField';
-import { CATEGORIAS } from '../../config/constants';
-import { colors, spacing } from '../../config/theme';
+import { colors, radius, shadow, spacing, typography } from '../../config/theme';
 import { useSearchHistory } from '../../hooks/useSearchHistory';
 import { useUbicacionActual } from '../../hooks/useUbicacionActual';
 import { getErrorMessage } from '../../services/errors';
 import { getBarrios } from '../../services/userService';
+import { criteriosDeFiltros, paramsDeFecha, RADIO_KM_POR_DEFECTO, resumenDeFiltros } from '../../utils/busqueda';
 
-const PASOS = ['¿Qué te pasó?', '¿Qué es?', '¿Dónde?', '¿Cuándo?'];
+const PASOS = [
+  { titulo: '¿Qué te pasó?', subtitulo: 'Elegí una opción para empezar a buscar.' },
+  { titulo: '¿Qué estás buscando?', subtitulo: 'Elegí una categoría y, si querés, sumá palabras clave.' },
+  { titulo: '¿Dónde fue?', subtitulo: 'Usá tu ubicación o elegí el barrio donde pasó.' },
+  { titulo: '¿Cuándo fue?', subtitulo: 'Acotá la búsqueda a un período, o dejala abierta.' },
+];
 
-// Wizard de 4 pasos (sección 4.1 del plan). useState local nomás: no hace falta Context,
-// la navegación entre pasos es intra-pantalla, mismo espíritu que EditProfileScreen.
+// Buscador guiado de 4 pasos (Punto 3). useState local nomás: la navegación entre pasos es
+// intra-pantalla. Al buscar se navega a Resultados y el asistente se reinicia, así volver
+// atrás deja una búsqueda nueva de cero (sin criterios pegados de la anterior).
 export default function BuscadorInicialScreen({ navigation }) {
   const [step, setStep] = useState(0);
   const [tipoBuscado, setTipoBuscado] = useState(null);
@@ -25,41 +34,48 @@ export default function BuscadorInicialScreen({ navigation }) {
   const [texto, setTexto] = useState('');
   const [barrioId, setBarrioId] = useState(null);
   const [barrios, setBarrios] = useState([]);
+  const [errorBarrios, setErrorBarrios] = useState('');
+  const [cargandoBarrios, setCargandoBarrios] = useState(false);
+  const [radioKm, setRadioKm] = useState(RADIO_KM_POR_DEFECTO);
   const [rango, setRango] = useState(null);
   const [desde, setDesde] = useState(null);
   const [hasta, setHasta] = useState(null);
-  const [error, setError] = useState('');
+  const [errorFechas, setErrorFechas] = useState('');
 
-  const {
-    ubicacion,
-    cargando: cargandoUbicacion,
-    error: errorUbicacion,
-    obtenerUbicacion,
-    limpiarUbicacion,
-    abrirConfiguracion,
-  } = useUbicacionActual();
+  const { ubicacion, cargando: cargandoUbicacion, error: errorUbicacion, obtenerUbicacion, limpiarUbicacion } =
+    useUbicacionActual();
   const { ultimasBusquedas, guardarBusqueda } = useSearchHistory();
+
+  const cargarBarrios = useCallback(async () => {
+    setCargandoBarrios(true);
+    setErrorBarrios('');
+    try {
+      setBarrios(await getBarrios());
+    } catch (e) {
+      setErrorBarrios(getErrorMessage(e));
+    } finally {
+      setCargandoBarrios(false);
+    }
+  }, []);
 
   useEffect(() => {
     getBarrios()
       .then(setBarrios)
-      .catch((e) => setError(getErrorMessage(e)));
+      .catch((e) => setErrorBarrios(getErrorMessage(e)));
   }, []);
 
-  // Arranca una búsqueda nueva de cero: si no se limpian categoría/texto/barrio/ubicación/
-  // rango acá, quedan pegados de una búsqueda anterior (la pantalla no se desmonta al volver
-  // de Resultados) y terminan filtrando de más sin que la persona lo note — p. ej. un texto
-  // tipeado en un intento previo sigue aplicado en el siguiente.
-  const elegirTipo = (valor) => {
-    setTipoBuscado(valor);
+  const reiniciar = () => {
+    setStep(0);
+    setTipoBuscado(null);
     setCategoria(null);
     setTexto('');
     setBarrioId(null);
+    setRadioKm(RADIO_KM_POR_DEFECTO);
     setRango(null);
     setDesde(null);
     setHasta(null);
+    setErrorFechas('');
     limpiarUbicacion();
-    setStep(1);
   };
 
   const usarUbicacion = async () => {
@@ -67,201 +83,368 @@ export default function BuscadorInicialScreen({ navigation }) {
     if (coords) setBarrioId(null);
   };
 
-  const seleccionarBarrio = (barrio) => {
-    setBarrioId(barrio.id);
-  };
+  const nombreBarrio = (id) => barrios.find((b) => b.id === id)?.name ?? null;
 
-  const construirFiltros = () => ({
-    tipoBuscado,
-    categoria: categoria ?? undefined,
-    texto: texto.trim() || undefined,
-    barrioId: ubicacion ? undefined : (barrioId ?? undefined),
-    lat: ubicacion?.lat,
-    lng: ubicacion?.lng,
-    rango: rango ?? undefined,
-    desde: rango === 'personalizado' ? desde?.toISOString() : undefined,
-    hasta: rango === 'personalizado' ? hasta?.toISOString() : undefined,
-  });
-
-  const etiquetaDe = (filtros) => {
-    const categoriaLabel = CATEGORIAS.find((c) => c.id === filtros.categoria)?.label ?? 'cualquier categoría';
-    const lugar = filtros.barrioId
-      ? (barrios.find((b) => b.id === filtros.barrioId)?.name ?? 'un barrio')
-      : filtros.lat != null
-        ? 'mi ubicación'
-        : 'cualquier lugar';
-    return `${filtros.tipoBuscado === 'perdido' ? 'Perdí' : 'Encontré'} · ${categoriaLabel} · ${lugar}`;
-  };
-
-  const confirmar = () => {
+  const buscar = () => {
     if (rango === 'personalizado' && (!desde || !hasta)) {
-      setError('Elegí las dos fechas del rango personalizado.');
+      setErrorFechas('Elegí las dos fechas del rango, o usá otra opción.');
       return;
     }
-    setError('');
-    const filtros = construirFiltros();
-    guardarBusqueda(filtros, etiquetaDe(filtros));
-    navigation.navigate('Resultados', { filtros });
+    if (rango === 'personalizado' && desde > hasta) {
+      setErrorFechas('La fecha "Desde" no puede ser posterior a "Hasta".');
+      return;
+    }
+    setErrorFechas('');
+    const filtros = {
+      tipoBuscado,
+      categoria: categoria ?? undefined,
+      texto: texto.trim() || undefined,
+      barrioId: ubicacion ? undefined : (barrioId ?? undefined),
+      lat: ubicacion?.lat,
+      lng: ubicacion?.lng,
+      // Con ubicación hace falta un radio: sin él, la ubicación solo ordenaría y la persona
+      // vería publicaciones de toda la ciudad creyendo que son cercanas.
+      radioKm: ubicacion ? radioKm : undefined,
+      ...paramsDeFecha(rango, desde, hasta),
+    };
+    const barrioNombre = filtros.barrioId ? nombreBarrio(filtros.barrioId) : null;
+    guardarBusqueda(filtros, barrioNombre);
+    navigation.navigate('Resultados', { filtros, barrioNombre });
+    reiniciar();
   };
 
   const repetirBusqueda = (busqueda) => {
-    navigation.navigate('Resultados', { filtros: busqueda.filtros });
+    navigation.navigate('Resultados', { filtros: busqueda.filtros, barrioNombre: busqueda.barrioNombre });
   };
 
+  const explorar = () => {
+    navigation.navigate('Resultados', { filtros: { tipoBuscado: 'todos' } });
+  };
+
+  const paso = PASOS[step];
+  const ultimo = step === PASOS.length - 1;
+
+  const footer = (
+    <View style={styles.footer}>
+      {step > 0 ? (
+        <Button title="Atrás" icon="arrow-back" variant="secondary" onPress={() => setStep(step - 1)} style={styles.botonAtras} />
+      ) : null}
+      <Button
+        title={ultimo ? 'Buscar' : 'Siguiente'}
+        icon={ultimo ? 'search' : undefined}
+        iconRight={ultimo ? undefined : 'arrow-forward'}
+        onPress={ultimo ? buscar : () => setStep(step + 1)}
+        disabled={step === 0 && !tipoBuscado}
+        style={styles.botonSiguiente}
+      />
+    </View>
+  );
+
   return (
-    <Screen>
-      <Text style={styles.pasoIndicador}>
-        Paso {step + 1} de 4 — {PASOS[step]}
-      </Text>
+    <Screen title={paso.titulo} subtitle={paso.subtitulo} footer={footer}>
+      <View style={styles.progreso} accessibilityLabel={`Paso ${step + 1} de ${PASOS.length}`}>
+        <View style={styles.barras}>
+          {PASOS.map((_, i) => (
+            <View key={i} style={[styles.barra, i <= step && styles.barraActiva]} />
+          ))}
+        </View>
+        <Text style={styles.pasoTexto}>
+          Paso {step + 1} de {PASOS.length}
+        </Text>
+      </View>
 
       {step === 0 ? (
-        <View style={styles.opciones}>
-          <TouchableOpacity style={styles.opcionGrande} onPress={() => elegirTipo('perdido')}>
-            <Text style={styles.opcionEmoji}>😟</Text>
-            <Text style={styles.opcionTexto}>Perdí algo</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.opcionGrande} onPress={() => elegirTipo('encontrado')}>
-            <Text style={styles.opcionEmoji}>🔎</Text>
-            <Text style={styles.opcionTexto}>Encontré algo</Text>
-          </TouchableOpacity>
+        <>
+          <View style={styles.opciones}>
+            <TipoCard
+              icon="help-circle-outline"
+              titulo="Perdí algo"
+              texto="Te mostramos lo que otros encontraron."
+              tono="perdido"
+              activo={tipoBuscado === 'perdido'}
+              onPress={() => setTipoBuscado('perdido')}
+            />
+            <TipoCard
+              icon="hand-left-outline"
+              titulo="Encontré algo"
+              texto="Te mostramos lo que otros están buscando."
+              tono="encontrado"
+              activo={tipoBuscado === 'encontrado'}
+              onPress={() => setTipoBuscado('encontrado')}
+            />
+          </View>
 
-          <TouchableOpacity
-            style={styles.botonExplorar}
-            onPress={() => navigation.navigate('Resultados', { filtros: { tipoBuscado: 'perdido' } })}
+          <Pressable
+            style={({ pressed }) => [styles.explorar, pressed && { opacity: 0.8 }]}
+            onPress={explorar}
+            accessibilityRole="button"
+            accessibilityLabel="Explorar todas las publicaciones"
           >
-            <Text style={styles.botonExplorarTexto}>Explorar publicaciones de la comunidad ›</Text>
-          </TouchableOpacity>
+            <Ionicons name="earth-outline" size={20} color={colors.primary} />
+            <View style={styles.explorarTextos}>
+              <Text style={styles.explorarTitulo}>Explorar todas las publicaciones</Text>
+              <Text style={styles.explorarTexto}>Mirá lo perdido y lo encontrado, sin filtrar.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </Pressable>
 
           {ultimasBusquedas.length > 0 ? (
             <View style={styles.historial}>
-              <Text style={styles.historialTitulo}>Últimas búsquedas</Text>
-              {ultimasBusquedas.map((b, i) => (
-                <TouchableOpacity key={i} style={styles.historialItem} onPress={() => repetirBusqueda(b)}>
-                  <Text style={styles.historialTexto}>{b.etiqueta}</Text>
-                </TouchableOpacity>
+              <SectionHeader title="Últimas búsquedas" />
+              {ultimasBusquedas.map((b) => (
+                <Pressable
+                  key={b.clave ?? b.fecha}
+                  style={({ pressed }) => [styles.historialItem, pressed && { opacity: 0.85 }]}
+                  onPress={() => repetirBusqueda(b)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Repetir búsqueda: ${b.etiqueta}`}
+                >
+                  <View style={styles.historialIcono}>
+                    <Ionicons name="time-outline" size={20} color={colors.primary} />
+                  </View>
+                  <Text style={styles.historialTexto} numberOfLines={2}>
+                    {b.etiqueta ?? resumenDeFiltros(b.filtros, b.barrioNombre)}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                </Pressable>
               ))}
             </View>
           ) : null}
-        </View>
+        </>
       ) : null}
 
       {step === 1 ? (
-        <View style={styles.paso}>
+        <>
           <CategoriaPicker selected={categoria} onSelect={setCategoria} />
           <TextField
             label="Palabras clave (opcional)"
+            icon="search"
             placeholder="Ej: llavero, mochila azul…"
             value={texto}
             onChangeText={setTexto}
+            returnKeyType="next"
           />
-        </View>
+        </>
       ) : null}
 
       {step === 2 ? (
-        <View style={styles.paso}>
+        <>
+          {errorBarrios ? (
+            <View style={styles.errorBarrios}>
+              <InlineMessage tone="error" message={`No pudimos cargar los barrios. ${errorBarrios}`} />
+              <Button title="Reintentar" icon="refresh" variant="secondary" size="sm" onPress={cargarBarrios} loading={cargandoBarrios} />
+            </View>
+          ) : null}
           <BarrioOUbicacionPicker
             barrios={barrios}
             barrioId={barrioId}
-            onSelectBarrio={seleccionarBarrio}
+            onSelectBarrio={(b) => {
+              setBarrioId(b.id);
+              limpiarUbicacion();
+            }}
+            onQuitarBarrio={() => setBarrioId(null)}
             ubicacion={ubicacion}
             cargandoUbicacion={cargandoUbicacion}
             error={errorUbicacion}
             onUsarUbicacion={usarUbicacion}
             onQuitarUbicacion={limpiarUbicacion}
-            onAbrirConfiguracion={abrirConfiguracion}
+            radioKm={radioKm}
+            onChangeRadio={setRadioKm}
           />
-        </View>
+          <Text style={styles.ayuda}>Si no elegís nada, buscamos en toda la ciudad.</Text>
+        </>
       ) : null}
 
       {step === 3 ? (
-        <View style={styles.paso}>
+        <>
           <RangoFechaPicker
             rango={rango}
-            onSelectRango={setRango}
+            onSelectRango={(r) => {
+              setRango(r);
+              setErrorFechas('');
+            }}
             desde={desde}
             hasta={hasta}
             onChangeDesde={setDesde}
             onChangeHasta={setHasta}
           />
-        </View>
+          <InlineMessage tone="error" message={errorFechas} />
+          <SectionHeader title="Tu búsqueda" />
+          <View style={styles.resumen}>
+            {criteriosDeFiltros(
+              {
+                tipoBuscado,
+                categoria: categoria ?? undefined,
+                texto,
+                barrioId: ubicacion ? undefined : (barrioId ?? undefined),
+                lat: ubicacion?.lat,
+                lng: ubicacion?.lng,
+                radioKm: ubicacion ? radioKm : undefined,
+              },
+              nombreBarrio(barrioId)
+            ).map((c) => (
+              <Chip key={c.key} label={c.label} icon={c.icon} tone="primary" />
+            ))}
+          </View>
+        </>
       ) : null}
-
-      <ErrorText message={error} />
-
-      <View style={styles.botones}>
-        {step > 0 ? <Button title="Atrás" variant="secondary" onPress={() => setStep(step - 1)} /> : null}
-        {step > 0 && step < 3 ? <Button title="Siguiente" onPress={() => setStep(step + 1)} /> : null}
-        {step === 3 ? <Button title="Buscar" onPress={confirmar} /> : null}
-      </View>
     </Screen>
   );
 }
 
+function TipoCard({ icon, titulo, texto, tono, activo, onPress }) {
+  const color = tono === 'perdido' ? colors.perdido : colors.encontrado;
+  const soft = tono === 'perdido' ? colors.perdidoSoft : colors.encontradoSoft;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: activo }}
+      accessibilityLabel={`${titulo}. ${texto}`}
+      style={({ pressed }) => [
+        styles.tipoCard,
+        activo && { borderColor: color, backgroundColor: soft },
+        pressed && { opacity: 0.9 },
+      ]}
+    >
+      <View style={[styles.tipoIcono, { backgroundColor: activo ? color : soft }]}>
+        <Ionicons name={icon} size={34} color={activo ? colors.white : color} />
+      </View>
+      <View style={styles.tipoTextos}>
+        <Text style={styles.tipoTitulo}>{titulo}</Text>
+        <Text style={styles.tipoTexto}>{texto}</Text>
+      </View>
+      <Ionicons
+        name={activo ? 'checkmark-circle' : 'ellipse-outline'}
+        size={26}
+        color={activo ? color : colors.borderStrong}
+      />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  pasoIndicador: {
-    fontSize: 13,
-    color: colors.textMuted,
-    fontWeight: '600',
+  progreso: {
+    gap: spacing.xs + 2,
+  },
+  barras: {
+    flexDirection: 'row',
+    gap: spacing.xs + 2,
+  },
+  barra: {
+    flex: 1,
+    height: 6,
+    borderRadius: radius.round,
+    backgroundColor: colors.border,
+  },
+  barraActiva: {
+    backgroundColor: colors.primary,
+  },
+  pasoTexto: {
+    ...typography.caption,
   },
   opciones: {
     gap: spacing.md,
   },
-  botonExplorar: {
+  tipoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    minHeight: 104,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    borderWidth: 2,
+    borderColor: colors.border,
+    ...shadow.sm,
+  },
+  tipoIcono: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.md,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.xs,
   },
-  botonExplorarTexto: {
-    fontSize: 15,
-    fontWeight: '600',
+  tipoTextos: {
+    flex: 1,
+    gap: 2,
+  },
+  tipoTitulo: {
+    ...typography.title,
+  },
+  tipoTexto: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  explorar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md - 4,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  explorarTextos: {
+    flex: 1,
+  },
+  explorarTitulo: {
+    ...typography.bodyStrong,
     color: colors.primary,
   },
-  opcionGrande: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-  },
-  opcionEmoji: {
-    fontSize: 40,
-  },
-  opcionTexto: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
+  explorarTexto: {
+    ...typography.caption,
   },
   historial: {
-    gap: spacing.xs,
-  },
-  historialTitulo: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
+    gap: spacing.sm,
   },
   historialItem: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md - 4,
+    minHeight: 56,
+    padding: spacing.md - 4,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.sm,
+  },
+  historialIcono: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   historialTexto: {
-    fontSize: 14,
-    color: colors.text,
+    flex: 1,
+    ...typography.bodyStrong,
   },
-  paso: {
-    gap: spacing.md,
+  resumen: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
-  botones: {
+  errorBarrios: {
+    gap: spacing.sm,
+  },
+  ayuda: {
+    ...typography.caption,
+    textAlign: 'center',
+  },
+  footer: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  botonAtras: {
+    flex: 1,
+  },
+  botonSiguiente: {
+    flex: 2,
   },
 });

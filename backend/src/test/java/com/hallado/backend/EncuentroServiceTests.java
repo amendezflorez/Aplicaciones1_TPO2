@@ -24,6 +24,7 @@ import com.hallado.backend.exception.ApiException;
 import com.hallado.backend.exception.ConflictException;
 import com.hallado.backend.repository.BarrioRepository;
 import com.hallado.backend.repository.EncuentroPropuestaRepository;
+import com.hallado.backend.repository.NotificacionRepository;
 import com.hallado.backend.repository.PublicacionRepository;
 import com.hallado.backend.repository.ReclamoRepository;
 import com.hallado.backend.repository.UserRepository;
@@ -52,6 +53,9 @@ class EncuentroServiceTests {
 
     @Autowired
     private BarrioRepository barrioRepository;
+
+    @Autowired
+    private NotificacionRepository notificacionRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -114,6 +118,10 @@ class EncuentroServiceTests {
                 encuentroPropuestaRepository.findByReclamoIdOrderByCreadaEnAscIdAsc(reclamoId));
         reclamoRepository.deleteById(reclamoId);
         publicacionRepository.deleteById(publicacionId);
+        // Punto 12: el encuentro notifica a las partes, y cada notificación referencia al
+        // usuario; hay que borrarlas antes que a los usuarios o la FK frena el borrado.
+        notificacionRepository.deleteAll(notificacionRepository.findByUsuarioId(publicadorId));
+        notificacionRepository.deleteAll(notificacionRepository.findByUsuarioId(autorId));
         userRepository.deleteById(publicadorId);
         userRepository.deleteById(autorId);
     }

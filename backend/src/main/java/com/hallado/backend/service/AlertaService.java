@@ -100,20 +100,35 @@ public class AlertaService {
         return toResponse(alerta, 0);
     }
 
-    // Mismo criterio que "contarNovedades" del backend Node de Ronda (demo/novedades):
-    // las publicaciones propias del usuario nunca cuentan como novedad para sí mismo.
+    // Total de novedades en alertas activas (las pausadas no cuentan). Alimenta el badge
+    // de la tab "Alertas" sin tener que traer el listado completo.
+    @Transactional(readOnly = true)
+    public long totalNovedades(String userId) {
+        return alertaRepository.findByUsuarioIdOrderByCreadaEnDesc(userId).stream()
+                .mapToLong(alerta -> contarNovedades(alerta, userId))
+                .sum();
+    }
+
+    // Novedad = publicación que coincide con la búsqueda y fue CREADA después de la última
+    // revisión (no importa cuándo ocurrió el suceso: una publicación cargada hoy sobre algo
+    // perdido la semana pasada sigue siendo nueva para quien tiene la alerta). El filtro por
+    // fecha de creación se hace acá, sobre la lista, porque el repositorio filtra por
+    // fechaSuceso. Las publicaciones propias nunca cuentan como novedad para uno mismo.
     private long contarNovedades(Alerta alerta, String userId) {
         if (alerta.isPausada()) {
             return 0;
         }
+        Instant ultimaRevision = alerta.getUltimaRevision();
         List<Publicacion> matches = publicacionRepository.buscar(
                 alerta.getTipoBuscado().opuesto(),
                 alerta.getCategoria(),
                 alerta.getBarrio() == null ? null : alerta.getBarrio().getId(),
-                alerta.getUltimaRevision(),
+                null,
                 null,
                 alerta.getTexto());
         return matches.stream()
+                .filter(p -> p.getCreadaEn() != null
+                        && (ultimaRevision == null || p.getCreadaEn().isAfter(ultimaRevision)))
                 .filter(p -> !p.getPublicador().getId().equals(userId))
                 .count();
     }

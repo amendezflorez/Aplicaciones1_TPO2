@@ -1,31 +1,36 @@
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, spacing } from '../config/theme';
 import { useConnectivity } from '../hooks/useConnectivity';
 
-// Punto 6 (sección 4.1 del plan): se renderiza una sola vez dentro de <Screen> para
-// aparecer automáticamente en todas las pantallas que lo usan, sin que cada una tenga que
-// agregarlo a mano. "desconocido" (isInternetReachable todavía null) a propósito NO cuenta
-// como sin conexión acá — ver ConnectivityContext.
+// Punto 6: se renderiza una sola vez dentro de <Screen>, así aparece en todas las
+// pantallas. "desconocido" (isInternetReachable todavía null) NO cuenta como sin conexión.
 export default function OfflineBanner() {
   const { sinConexion } = useConnectivity();
   if (!sinConexion) return null;
   return (
-    <View style={styles.banner}>
-      <Text style={styles.texto}>📡 Sin conexión — mostrando información guardada</Text>
+    <View style={styles.banner} accessibilityRole="alert">
+      <Ionicons name="cloud-offline" size={16} color={colors.white} />
+      <Text style={styles.texto}>Sin conexión. Te mostramos lo último guardado; lo que publiques se envía al volver.</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: colors.accent,
-    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.textSecondary,
+    paddingVertical: spacing.sm - 2,
     paddingHorizontal: spacing.md,
   },
   texto: {
+    flexShrink: 1,
+    textAlign: 'center',
     color: colors.white,
     fontSize: 13,
     fontWeight: '600',
-    textAlign: 'center',
   },
 });

@@ -1,243 +1,277 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Animated, AppState, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import Button from '../../components/Button';
-import { colors, spacing } from '../../config/theme';
+import PermisoDenegado from '../../components/PermisoDenegado';
+import Screen from '../../components/Screen';
+import { CardSkeleton, InlineMessage } from '../../components/StateViews';
+import { colors, radius, spacing, typography } from '../../config/theme';
+import { useAuth } from '../../hooks/useAuth';
 import { useReclamos } from '../../hooks/useReclamos';
-import { confirmarDevolucion } from '../../services/reclamosService';
+import { useToast } from '../../hooks/useToast';
 import { getErrorMessage } from '../../services/errors';
 import { decodeQrFromImage } from '../../services/qrImageDecoder';
+import { confirmarDevolucion } from '../../services/reclamosService';
+import { formatFechaHora } from '../../utils/publicacionFormatters';
+import { rolesReclamo } from '../../utils/reclamoRoles';
 
-function mensajeDeError(error) {
-  return error?.response?.data?.message || getErrorMessage(error);
-}
+const TAMANO_MARCO = 250;
+// Evita repetir el aviso de "QR incorrecto" mientras la cámara sigue apuntando al mismo código.
+const ESPERA_AVISO_MS = 3000;
 
+// Punto 11: quien recupera el objeto escanea el QR que le muestra (o tiene impreso) quien lo
+// devuelve. Al confirmarse, el backend pasa la publicación a "resuelta".
 export default function ConfirmarDevolucionScreen({ navigation, route }) {
   const { publicacionId, reclamoId } = route.params;
-  const [permission, requestPermission] = useCameraPermissions();
+  const toast = useToast();
+  const { user } = useAuth();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
   const isFocused = useIsFocused();
-  const { refresh } = useReclamos();
+  const { reclamos, refresh } = useReclamos();
   const [procesando, setProcesando] = useState(false);
   const [leyendoImagen, setLeyendoImagen] = useState(false);
   const [error, setError] = useState('');
   const [errorCamara, setErrorCamara] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
   const bloqueado = useRef(false);
+  const ultimoAviso = useRef(0);
   const solicitudInicial = useRef(false);
+  const [escala] = useState(() => new Animated.Value(0.4));
 
+  const reclamo = reclamos.find((item) => item.id === reclamoId);
+  const otraParte = reclamo ? rolesReclamo(reclamo, user?.id).otro.nombre : null;
+
+  // Primera vez: pide el permiso apenas se abre la pantalla (si todavía se puede preguntar).
   useEffect(() => {
-    if (!permission || permission.granted || solicitudInicial.current) return;
+    if (!permission || permission.granted || !permission.canAskAgain || solicitudInicial.current) return;
     solicitudInicial.current = true;
-    requestPermission().catch((requestError) => {
-      setError(mensajeDeError(requestError));
-    });
+    requestPermission().catch(() => {});
   }, [permission, requestPermission]);
 
+  // Si la persona fue a Configuración a habilitar la cámara, al volver se vuelve a consultar.
+  useEffect(() => {
+    const suscripcion = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') getPermission().catch(() => {});
+    });
+    return () => suscripcion.remove();
+  }, [getPermission]);
+
+  useEffect(() => {
+    if (!confirmacion) return;
+    Animated.spring(escala, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }).start();
+  }, [confirmacion, escala]);
+
+  const avisarError = useCallback((mensaje) => {
+    setError(mensaje);
+    toast.error(mensaje);
+  }, [toast]);
+
   const confirmarCodigo = useCallback(async (payload) => {
+    if (bloqueado.current) return;
     const codigo = typeof payload === 'string' ? payload.trim() : '';
     if (!codigo || codigo !== publicacionId) {
-      setError('El QR no corresponde a esta publicación. Verificá el código e intentá nuevamente.');
+      const ahora = Date.now();
+      if (ahora - ultimoAviso.current > ESPERA_AVISO_MS) {
+        ultimoAviso.current = ahora;
+        avisarError('Ese QR no corresponde a esta publicación. Pedile a la otra persona que te muestre el correcto.');
+      }
       return;
     }
 
-    if (bloqueado.current) return;
     bloqueado.current = true;
     setProcesando(true);
     setError('');
     try {
       const resultado = await confirmarDevolucion(publicacionId, reclamoId);
       setConfirmacion(resultado);
-      const listaActualizada = await refresh();
-      if (!listaActualizada) {
-        setError('La entrega quedó confirmada, pero no se pudo actualizar la bandeja. Volvé a cargar tus reclamos.');
-      }
+      toast.success('Devolución confirmada. La publicación quedó resuelta.');
+      refresh();
     } catch (requestError) {
-      setError(mensajeDeError(requestError));
+      avisarError(getErrorMessage(requestError));
       bloqueado.current = false;
     } finally {
       setProcesando(false);
     }
-  }, [publicacionId, reclamoId, refresh]);
+  }, [publicacionId, reclamoId, refresh, toast, avisarError]);
 
   const elegirImagen = async () => {
     setError('');
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 1,
-      });
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
       if (result.canceled) return;
       const asset = result.assets?.[0];
       if (!asset?.uri) {
-        setError('No se pudo abrir la imagen seleccionada. Elegí otra foto del código QR.');
+        avisarError('No pudimos abrir esa imagen. Elegí otra foto del código QR.');
         return;
       }
-
       setLeyendoImagen(true);
       const payload = await decodeQrFromImage(asset.uri, asset.width, asset.height);
       if (!payload) {
-        setError('No encontramos un código QR legible en esa imagen. Probá con una foto más nítida.');
+        avisarError('No encontramos un QR legible en esa imagen. Probá con una foto más nítida y de frente.');
         return;
       }
+      ultimoAviso.current = 0;
       await confirmarCodigo(payload);
-    } catch (decodeError) {
-      setError(`No se pudo leer la imagen seleccionada: ${mensajeDeError(decodeError)}`);
+    } catch {
+      avisarError('No pudimos leer esa imagen. Probá con otra.');
     } finally {
       setLeyendoImagen(false);
     }
   };
 
-  const abrirConfiguracion = async () => {
-    try {
-      await Linking.openSettings();
-    } catch (settingsError) {
-      Alert.alert('No se pudo abrir Configuración', mensajeDeError(settingsError));
-    }
-  };
-
-  const solicitarPermiso = async () => {
-    setError('');
-    try {
-      await requestPermission();
-    } catch (requestError) {
-      setError(mensajeDeError(requestError));
-    }
-  };
-
+  // --- Éxito ---
   if (confirmacion) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.successIcon}>✓</Text>
-        <Text style={styles.title}>¡Entrega confirmada!</Text>
-        <Text style={styles.body}>
-          La publicación quedó resuelta el {new Date(confirmacion.fechaResolucion).toLocaleString()}.
-        </Text>
-        <Text style={styles.body}>
-          La otra persona también verá la confirmación en sus reclamos.
-        </Text>
-        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        <Button title="Volver a mis reclamos" onPress={() => navigation.goBack()} />
-      </View>
+      <Screen
+        footer={(
+          <>
+            <Button
+              title={otraParte ? `Valorar a ${otraParte}` : 'Valorar la experiencia'}
+              icon="star-outline"
+              onPress={() => navigation.navigate('Perfil', { screen: 'Historial' })}
+            />
+            <Button title="Volver a mis reclamos" variant="secondary" onPress={() => navigation.popToTop()} />
+          </>
+        )}
+      >
+        <View style={styles.success}>
+          <Animated.View style={[styles.successCircle, { transform: [{ scale: escala }] }]}>
+            <Ionicons name="checkmark" size={72} color={colors.white} />
+          </Animated.View>
+          <Text style={[typography.display, styles.center]}>¡Devolución confirmada!</Text>
+          <Text style={[typography.body, styles.center, styles.muted]}>
+            La publicación quedó resuelta
+            {confirmacion.fechaResolucion ? ` el ${formatFechaHora(confirmacion.fechaResolucion)}` : ''}.
+            {' '}La otra persona también lo verá en sus reclamos.
+          </Text>
+          <Text style={[typography.body, styles.center, styles.muted]}>
+            Ya podés valorar la experiencia desde tu historial: tenés 7 días.
+          </Text>
+        </View>
+      </Screen>
     );
   }
 
+  // --- Permiso de cámara ---
   if (!permission) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={styles.body}>Verificando permiso de cámara…</Text>
-      </View>
+      <Screen>
+        <CardSkeleton count={1} />
+      </Screen>
     );
   }
 
+  if (!permission.granted) {
+    return (
+      <Screen>
+        <PermisoDenegado
+          titulo="Necesitamos usar tu cámara"
+          motivo="La cámara se usa solo para escanear el código QR que te muestra la otra persona y confirmar que recibiste tu objeto. Si preferís, podés elegir una imagen del QR desde tu galería."
+          puedePreguntar={permission.canAskAgain}
+          onPedirPermiso={() => requestPermission().catch(() => {})}
+          alternativaLabel="Elegir imagen del QR"
+          onAlternativa={elegirImagen}
+        />
+        {leyendoImagen ? <InlineMessage tone="info" message="Leyendo la imagen…" /> : null}
+        {error ? <InlineMessage tone="error" message={error} /> : null}
+      </Screen>
+    );
+  }
+
+  // --- Escáner ---
+  const ocupado = procesando || leyendoImagen;
   return (
-    <View style={styles.container}>
-      {permission.granted && isFocused ? (
+    <View style={styles.scanner}>
+      {/* La cámara se monta solo con la pantalla enfocada (libera el recurso al navegar). */}
+      {isFocused ? (
         <CameraView
-          style={styles.camera}
+          style={StyleSheet.absoluteFill}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-          onBarcodeScanned={procesando || leyendoImagen ? undefined : ({ data }) => confirmarCodigo(data)}
-          onMountError={(cameraError) => setErrorCamara(cameraError.message)}
+          onBarcodeScanned={ocupado ? undefined : ({ data }) => confirmarCodigo(data)}
+          onMountError={(cameraError) => setErrorCamara(cameraError?.message || 'No pudimos iniciar la cámara.')}
         />
-      ) : (
-        <View style={styles.permissionPanel}>
-          <Text style={styles.title}>Necesitamos acceso a tu cámara</Text>
-          <Text style={styles.body}>
-            Usamos la cámara para escanear el código QR y confirmar que recibiste tu objeto.
-          </Text>
-          {permission.canAskAgain ? (
-            <Button title="Permitir acceso a la cámara" onPress={solicitarPermiso} />
-          ) : null}
-          {!permission.canAskAgain ? (
-            <Button title="Ya habilité la cámara" variant="secondary" onPress={solicitarPermiso} />
-          ) : null}
-          <Button
-            title="Elegir una imagen del QR"
-            variant="secondary"
-            onPress={elegirImagen}
-            loading={leyendoImagen}
-          />
-          <Button title="Abrir Configuración" variant="secondary" onPress={abrirConfiguracion} />
-        </View>
-      )}
-
-      {permission.granted ? (
-        <View style={styles.controls}>
-          <Text style={styles.instructions}>Enfocá el código QR de la publicación.</Text>
-          {errorCamara ? <Text style={styles.error}>{errorCamara}</Text> : null}
-          <Button
-            title="Leer QR desde una imagen"
-            variant="secondary"
-            onPress={elegirImagen}
-            loading={leyendoImagen}
-          />
-          <Button
-            title="Abrir Configuración"
-            variant="secondary"
-            onPress={abrirConfiguracion}
-          />
-        </View>
       ) : null}
+
+      <View style={styles.overlay} pointerEvents="none">
+        <View style={styles.guide}>
+          <Text style={styles.guideText}>Apuntá al código QR de la publicación</Text>
+        </View>
+        <View style={styles.frame}>
+          <View style={[styles.corner, styles.tl]} />
+          <View style={[styles.corner, styles.tr]} />
+          <View style={[styles.corner, styles.bl]} />
+          <View style={[styles.corner, styles.br]} />
+        </View>
+      </View>
+
+      <View style={styles.bottom}>
+        {errorCamara ? <InlineMessage tone="error" message={errorCamara} /> : null}
+        {error && !errorCamara ? <InlineMessage tone="error" message={error} /> : null}
+        <Button
+          title="Elegir imagen del QR"
+          icon="images-outline"
+          variant="secondary"
+          onPress={elegirImagen}
+          loading={leyendoImagen}
+          disabled={procesando}
+        />
+      </View>
 
       {procesando ? (
         <View style={styles.progress}>
-          <ActivityIndicator color={colors.white} />
-          <Text style={styles.progressText}>Validando entrega…</Text>
+          <Text style={styles.progressText}>Confirmando entrega…</Text>
         </View>
       ) : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
 
+const ESQUINA = 36;
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-    backgroundColor: colors.background,
-  },
-  permissionPanel: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  camera: { flex: 1, minHeight: 260 },
-  controls: { gap: spacing.sm, padding: spacing.md },
-  instructions: { color: colors.text, textAlign: 'center', fontSize: 16 },
-  title: { color: colors.text, fontSize: 21, fontWeight: '700', textAlign: 'center' },
-  body: { color: colors.textMuted, fontSize: 15, lineHeight: 22, textAlign: 'center' },
-  error: {
-    color: colors.error,
+  scanner: { flex: 1, backgroundColor: colors.text },
+  overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
+  guide: {
+    backgroundColor: colors.overlay,
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    textAlign: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.round,
   },
-  successIcon: { color: colors.success, fontSize: 56, fontWeight: '700' },
-  progress: {
+  guideText: { color: colors.white, fontSize: 15, fontWeight: '600' },
+  frame: { width: TAMANO_MARCO, height: TAMANO_MARCO },
+  corner: { position: 'absolute', width: ESQUINA, height: ESQUINA, borderColor: colors.white },
+  tl: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: radius.md },
+  tr: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: radius.md },
+  bl: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: radius.md },
+  br: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: radius.md },
+  bottom: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 0,
     bottom: 0,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  progress: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: '#0F172A99',
+    backgroundColor: colors.overlay,
   },
-  progressText: { color: colors.white, fontWeight: '600' },
+  progressText: { color: colors.white, fontSize: 17, fontWeight: '700' },
+  success: { alignItems: 'center', gap: spacing.md, paddingTop: spacing.xl },
+  successCircle: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  center: { textAlign: 'center' },
+  muted: { color: colors.textSecondary },
 });

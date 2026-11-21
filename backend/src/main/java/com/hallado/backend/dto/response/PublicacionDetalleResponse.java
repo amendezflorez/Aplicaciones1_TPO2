@@ -13,6 +13,8 @@ import java.util.List;
 // direccionExacta/latExacta/lngExacta llegan null salvo reclamo ACEPTADO del usuario o
 // publicación propia — la gating la hace PublicacionMapper, nunca el cliente.
 // preguntaVerificacion sí viaja siempre (cualquiera puede intentar "Es mío");
+// yaReclame es true solo con un reclamo PENDIENTE o ACEPTADO del usuario (uno rechazado o
+// vencido permite reintentar); intentosRestantes = 3 menos los reclamos que ya hizo.
 // respuestaVerificacion nunca se expone acá ni en ningún otro DTO.
 public record PublicacionDetalleResponse(
         String id,
@@ -35,5 +37,6 @@ public record PublicacionDetalleResponse(
         PublicadorResponse publicador,
         boolean esPropia,
         boolean yaReclame,
-        boolean siguiendo) {
+        boolean siguiendo,
+        int intentosRestantes) {
 }

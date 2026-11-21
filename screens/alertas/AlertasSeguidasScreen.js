@@ -1,22 +1,17 @@
-import { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useCallback, useRef, useState } from 'react';
+import { Alert, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AlertaCard from '../../components/AlertaCard';
 import Button from '../../components/Button';
-import ErrorText from '../../components/ErrorText';
+import EstadoChip from '../../components/EstadoChip';
 import OfflineBanner from '../../components/OfflineBanner';
 import PublicationCard from '../../components/PublicationCard';
-import { colors, radius, spacing } from '../../config/theme';
+import SegmentedTabs from '../../components/SegmentedTabs';
+import { CardSkeleton, EmptyState, ErrorState, InlineMessage } from '../../components/StateViews';
+import { colors, radius, spacing, typography } from '../../config/theme';
 import { useConnectivity } from '../../hooks/useConnectivity';
+import { useToast } from '../../hooks/useToast';
 import { borrarAlerta, getAlertas, pausarAlerta, revisarAlerta } from '../../services/alertasService';
 import { getErrorMessage } from '../../services/errors';
 import {
@@ -25,89 +20,114 @@ import {
   marcarSeguimientoVisto,
 } from '../../services/seguimientosService';
 
+// Punto 9: "Mis alertas" (búsquedas guardadas) y "Seguidas" (publicaciones seguidas), cada
+// una con su propio estado de carga/error para que una falla no esconda a la otra.
+const ESTADO_INICIAL = { data: [], loading: true, error: '' };
+const POLL_MS = 30000;
+
 export default function AlertasSeguidasScreen({ navigation }) {
   const { sinConexion } = useConnectivity();
+  const toast = useToast();
   const [vista, setVista] = useState('alertas'); // 'alertas' | 'seguidas'
-
-  const [alertas, setAlertas] = useState([]);
-  const [seguidas, setSeguidas] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [alertas, setAlertas] = useState(ESTADO_INICIAL);
+  const [seguidas, setSeguidas] = useState(ESTADO_INICIAL);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  // ids con una acción en curso (pausar/eliminar/dejar de seguir)
+  const [ocupados, setOcupados] = useState({});
+  const cargados = useRef({ alertas: false, seguidas: false });
 
-  const cargarDatos = useCallback(async () => {
+  const marcarOcupado = (id, valor) =>
+    setOcupados((prev) => {
+      const next = { ...prev };
+      if (valor) next[id] = true;
+      else delete next[id];
+      return next;
+    });
+
+  // silencioso = refresco automático en segundo plano: si ya hay datos y falla, se
+  // conservan (no se pisa la lista con un error); sin datos, sí se muestra el error.
+  const cargarSegmento = useCallback(async (clave, fetcher, setEstado, { silencioso = false } = {}) => {
+    if (!silencioso && !cargados.current[clave]) setEstado((s) => ({ ...s, loading: true }));
     try {
-      setError('');
-      const [alertasData, seguidasData] = await Promise.all([
-        getAlertas().catch((e) => {
-          // Si falla de red offline, no bloquear
-          return [];
-        }),
-        getSeguidas().catch((e) => {
-          return [];
-        }),
-      ]);
-      setAlertas(alertasData || []);
-      setSeguidas(seguidasData || []);
+      const data = await fetcher();
+      cargados.current[clave] = true;
+      setEstado({ data: data ?? [], loading: false, error: '' });
     } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setEstado((s) =>
+        silencioso && cargados.current[clave]
+          ? s
+          : { data: cargados.current[clave] ? s.data : [], loading: false, error: getErrorMessage(e) }
+      );
+      if (!silencioso && cargados.current[clave]) toast.error(getErrorMessage(e));
     }
-  }, []);
+  }, [toast]);
+
+  const cargarAlertas = useCallback(
+    (opts) => cargarSegmento('alertas', getAlertas, setAlertas, opts),
+    [cargarSegmento]
+  );
+  const cargarSeguidas = useCallback(
+    (opts) => cargarSegmento('seguidas', getSeguidas, setSeguidas, opts),
+    [cargarSegmento]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      cargarDatos();
-      const interval = setInterval(cargarDatos, 30000);
+      cargarAlertas();
+      cargarSeguidas();
+      const interval = setInterval(() => {
+        cargarAlertas({ silencioso: true });
+        cargarSeguidas({ silencioso: true });
+      }, POLL_MS);
       return () => clearInterval(interval);
-    }, [cargarDatos])
+    }, [cargarAlertas, cargarSeguidas])
   );
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    cargarDatos();
+    await (vista === 'alertas' ? cargarAlertas() : cargarSeguidas());
+    setRefreshing(false);
   };
 
+  // ---------- Alertas ----------
   const handleTogglePausa = async (alerta) => {
-    if (sinConexion) {
-      Alert.alert('Sin conexión', 'Necesitás conexión para pausar o reanudar alertas.');
-      return;
-    }
-    const nuevoEstado = !alerta.pausada;
-    // Actualización optimista
-    setAlertas((prev) =>
-      prev.map((a) => (a.id === alerta.id ? { ...a, pausada: nuevoEstado, novedadesCount: nuevoEstado ? 0 : a.novedadesCount } : a))
-    );
+    if (sinConexion) return;
+    const pausar = !alerta.pausada;
+    marcarOcupado(alerta.id, true);
     try {
-      await pausarAlerta(alerta.id, nuevoEstado);
+      const actualizada = await pausarAlerta(alerta.id, pausar);
+      setAlertas((s) => ({
+        ...s,
+        data: s.data.map((a) => (a.id === alerta.id ? { ...a, ...actualizada } : a)),
+      }));
+      toast.success(pausar ? 'Alerta pausada. No vas a recibir avisos.' : 'Alerta activada. Te vamos a avisar de novedades.');
     } catch (e) {
-      cargarDatos();
-      Alert.alert('Error', getErrorMessage(e));
+      toast.error(getErrorMessage(e));
+    } finally {
+      marcarOcupado(alerta.id, false);
     }
   };
 
   const handleEliminarAlerta = (alerta) => {
-    if (sinConexion) {
-      Alert.alert('Sin conexión', 'Necesitás conexión para eliminar alertas.');
-      return;
-    }
+    if (sinConexion) return;
     Alert.alert(
       'Eliminar alerta',
-      '¿Seguro que querés eliminar esta alerta? No volverás a recibir novedades de esta búsqueda.',
+      'No vas a recibir más avisos de esta búsqueda. ¿Querés eliminarla?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
-            setAlertas((prev) => prev.filter((a) => a.id !== alerta.id));
+            marcarOcupado(alerta.id, true);
             try {
               await borrarAlerta(alerta.id);
+              setAlertas((s) => ({ ...s, data: s.data.filter((a) => a.id !== alerta.id) }));
+              toast.success('Alerta eliminada.');
             } catch (e) {
-              cargarDatos();
-              Alert.alert('Error', getErrorMessage(e));
+              toast.error(getErrorMessage(e));
+            } finally {
+              marcarOcupado(alerta.id, false);
             }
           },
         },
@@ -115,193 +135,211 @@ export default function AlertasSeguidasScreen({ navigation }) {
     );
   };
 
-  const handleVerAlerta = async (alerta) => {
+  // Tocar una alerta ejecuta su búsqueda y la marca como revisada (el contador vuelve a 0).
+  const handleVerAlerta = (alerta) => {
     if (!alerta.pausada && alerta.novedadesCount > 0) {
-      // Reiniciar contador de novedades en backend
-      revisarAlerta(alerta.id).catch(() => {});
-      setAlertas((prev) =>
-        prev.map((a) => (a.id === alerta.id ? { ...a, novedadesCount: 0 } : a))
-      );
+      setAlertas((s) => ({
+        ...s,
+        data: s.data.map((a) => (a.id === alerta.id ? { ...a, novedadesCount: 0 } : a)),
+      }));
+      revisarAlerta(alerta.id).catch((e) => {
+        toast.error(getErrorMessage(e));
+        cargarAlertas({ silencioso: true });
+      });
     }
-    navigation.navigate('Buscar', {
-      screen: 'Resultados',
-      params: {
-        filtros: {
-          tipoBuscado: alerta.tipoBuscado,
-          categoria: alerta.categoria,
-          barrioId: alerta.barrio?.id,
-          texto: alerta.texto,
-        },
-      },
-    });
+    const filtros = { tipoBuscado: alerta.tipoBuscado };
+    if (alerta.categoria) filtros.categoria = alerta.categoria;
+    if (alerta.barrio?.id) filtros.barrioId = alerta.barrio.id;
+    if (alerta.texto) filtros.texto = alerta.texto;
+    navigation.navigate('Buscar', { screen: 'Resultados', params: { filtros } });
   };
 
-  const handleVerSeguimiento = async (item) => {
+  // ---------- Seguidas ----------
+  const handleVerSeguimiento = (item) => {
     if (item.cambioEstado) {
-      marcarSeguimientoVisto(item.id).catch(() => {});
-      setSeguidas((prev) =>
-        prev.map((s) => (s.id === item.id ? { ...s, cambioEstado: false, ultimoEstadoVisto: item.estado } : s))
-      );
+      setSeguidas((s) => ({
+        ...s,
+        data: s.data.map((x) =>
+          x.id === item.id ? { ...x, cambioEstado: false, ultimoEstadoVisto: item.estado } : x
+        ),
+      }));
+      marcarSeguimientoVisto(item.id).catch((e) => {
+        toast.error(getErrorMessage(e));
+        cargarSeguidas({ silencioso: true });
+      });
     }
-    navigation.navigate('Buscar', {
-      screen: 'DetallePublicacion',
-      params: { id: item.id },
-    });
+    navigation.navigate('Buscar', { screen: 'DetallePublicacion', params: { id: item.id } });
   };
 
   const handleDejarDeSeguir = (item) => {
-    if (sinConexion) {
-      Alert.alert('Sin conexión', 'Necesitás conexión para dejar de seguir publicaciones.');
-      return;
-    }
-    Alert.alert(
-      'Dejar de seguir',
-      `¿Dejar de seguir "${item.titulo}"?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Dejar de seguir',
-          style: 'destructive',
-          onPress: async () => {
-            setSeguidas((prev) => prev.filter((s) => s.id !== item.id));
-            try {
-              await dejarDeSeguirPublicacion(item.id);
-            } catch (e) {
-              cargarDatos();
-              Alert.alert('Error', getErrorMessage(e));
-            }
-          },
+    if (sinConexion) return;
+    Alert.alert('Dejar de seguir', `¿Dejar de seguir "${item.titulo}"? Ya no te avisamos si cambia de estado.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Dejar de seguir',
+        style: 'destructive',
+        onPress: async () => {
+          marcarOcupado(item.id, true);
+          try {
+            await dejarDeSeguirPublicacion(item.id);
+            setSeguidas((s) => ({ ...s, data: s.data.filter((x) => x.id !== item.id) }));
+            toast.success('Dejaste de seguir la publicación.');
+          } catch (e) {
+            toast.error(getErrorMessage(e));
+          } finally {
+            marcarOcupado(item.id, false);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const totalNovedadesAlertas = alertas.reduce(
+  const novedadesAlertas = alertas.data.reduce(
     (sum, a) => sum + (!a.pausada && a.novedadesCount ? a.novedadesCount : 0),
     0
   );
-  const totalNovedadesSeguidas = seguidas.filter((s) => s.cambioEstado).length;
+  const novedadesSeguidas = seguidas.data.filter((s) => s.cambioEstado).length;
+
+  const opciones = [
+    { id: 'alertas', label: 'Mis alertas', count: alertas.data.length, badge: novedadesAlertas },
+    { id: 'seguidas', label: 'Seguidas', count: seguidas.data.length, badge: novedadesSeguidas },
+  ];
+
+  const estado = vista === 'alertas' ? alertas : seguidas;
+  const reintentar = () => (vista === 'alertas' ? cargarAlertas() : cargarSeguidas());
+
+  const listaProps = {
+    contentContainerStyle: styles.lista,
+    ItemSeparatorComponent: Separador,
+    showsVerticalScrollIndicator: false,
+    refreshControl: (
+      <RefreshControl
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        colors={[colors.primary]}
+        tintColor={colors.primary}
+      />
+    ),
+  };
+
+  let contenido;
+  if (estado.loading) {
+    contenido = (
+      <View style={styles.lista}>
+        <CardSkeleton count={3} />
+      </View>
+    );
+  } else if (estado.error) {
+    contenido = (
+      <ErrorState
+        title={vista === 'alertas' ? 'No pudimos cargar tus alertas' : 'No pudimos cargar tus seguidas'}
+        message={estado.error}
+        onRetry={reintentar}
+      />
+    );
+  } else if (vista === 'alertas') {
+    contenido = (
+      <FlatList
+        {...listaProps}
+        data={alertas.data}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <AlertaCard
+            alerta={item}
+            busy={!!ocupados[item.id]}
+            disabled={sinConexion}
+            onPress={() => handleVerAlerta(item)}
+            onTogglePausa={() => handleTogglePausa(item)}
+            onEliminar={() => handleEliminarAlerta(item)}
+          />
+        )}
+        ListEmptyComponent={
+          <EmptyState
+            icon="notifications-outline"
+            title="Todavía no tenés alertas"
+            message="Guardá una búsqueda como alerta desde los resultados y te avisamos cuando alguien publique algo que coincida."
+            actionLabel="Ir a Buscar"
+            onAction={() => navigation.navigate('Buscar')}
+          />
+        }
+      />
+    );
+  } else {
+    contenido = (
+      <FlatList
+        {...listaProps}
+        data={seguidas.data}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <SeguidaItem
+            item={item}
+            busy={!!ocupados[item.id]}
+            sinConexion={sinConexion}
+            onPress={() => handleVerSeguimiento(item)}
+            onDejarDeSeguir={() => handleDejarDeSeguir(item)}
+          />
+        )}
+        ListEmptyComponent={
+          <EmptyState
+            icon="bookmark-outline"
+            title="No seguís ninguna publicación"
+            message={'Tocá "Seguir" en el detalle de una publicación y te avisamos si cambia de estado.'}
+            actionLabel="Explorar publicaciones"
+            onAction={() => navigation.navigate('Buscar')}
+          />
+        }
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
       <OfflineBanner />
-      {sinConexion ? (
-        <Text style={styles.avisoSinConexion}>
-          Estás sin conexión. Las acciones para pausar, eliminar o seguir requieren internet.
-        </Text>
-      ) : null}
-
-      {/* Tabs segmentadas */}
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, vista === 'alertas' && styles.tabSelected]}
-          onPress={() => setVista('alertas')}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: vista === 'alertas' }}
-        >
-          <View style={styles.tabContent}>
-            <Text style={[styles.tabText, vista === 'alertas' && styles.tabTextSelected]}>
-              Mis alertas ({alertas.length})
-            </Text>
-            {totalNovedadesAlertas > 0 ? (
-              <View style={styles.badgeIndicador}>
-                <Text style={styles.badgeIndicadorText}>{totalNovedadesAlertas}</Text>
-              </View>
-            ) : null}
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, vista === 'seguidas' && styles.tabSelected]}
-          onPress={() => setVista('seguidas')}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: vista === 'seguidas' }}
-        >
-          <View style={styles.tabContent}>
-            <Text style={[styles.tabText, vista === 'seguidas' && styles.tabTextSelected]}>
-              Seguidas ({seguidas.length})
-            </Text>
-            {totalNovedadesSeguidas > 0 ? (
-              <View style={styles.badgeIndicador}>
-                <Text style={styles.badgeIndicadorText}>{totalNovedadesSeguidas}</Text>
-              </View>
-            ) : null}
-          </View>
-        </TouchableOpacity>
+      <View style={styles.cabecera}>
+        <SegmentedTabs options={opciones} value={vista} onChange={setVista} />
+        {sinConexion ? (
+          <InlineMessage
+            tone="info"
+            message="Sin conexión: no podés pausar, eliminar ni dejar de seguir hasta que vuelva internet."
+          />
+        ) : null}
       </View>
+      {contenido}
+    </View>
+  );
+}
 
-      <ErrorText message={error} />
+function Separador() {
+  return <View style={{ height: spacing.md }} />;
+}
 
-      {loading && !refreshing ? (
-        <View style={styles.centrado}>
-          <ActivityIndicator size="large" color={colors.primary} />
+// Publicación seguida: la tarjeta normal + aviso "Cambió de estado" cuando hay novedad.
+function SeguidaItem({ item, busy, sinConexion, onPress, onDejarDeSeguir }) {
+  return (
+    <View style={styles.seguida}>
+      {item.cambioEstado ? (
+        <View style={styles.cambio}>
+          <View style={styles.cambioIcon}>
+            <Ionicons name="sync" size={14} color={colors.white} />
+          </View>
+          <Text style={styles.cambioText}>Antes</Text>
+          {item.ultimoEstadoVisto ? <EstadoChip estado={item.ultimoEstadoVisto} /> : null}
+          <Ionicons name="arrow-forward" size={14} color="#B8411F" />
+          <Text style={styles.cambioText}>Ahora</Text>
+          <EstadoChip estado={item.estado} />
         </View>
-      ) : vista === 'alertas' ? (
-        <FlatList
-          data={alertas}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.list, !alertas.length && styles.emptyList]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-          renderItem={({ item }) => (
-            <AlertaCard
-              alerta={item}
-              onPress={() => handleVerAlerta(item)}
-              onTogglePausa={() => handleTogglePausa(item)}
-              onEliminar={() => handleEliminarAlerta(item)}
-              disabled={sinConexion}
-            />
-          )}
-          ListEmptyComponent={
-            <View style={styles.vacio}>
-              <Text style={styles.vacioIcono}>🔔</Text>
-              <Text style={styles.vacioTitulo}>Sin alertas creadas</Text>
-              <Text style={styles.vacioTexto}>
-                Al realizar una búsqueda podés guardarla como alerta para enterarte al instante cuando alguien publique lo que buscás.
-              </Text>
-              <Button
-                title="Ir al buscador"
-                onPress={() => navigation.navigate('Buscar')}
-                style={styles.botonVacio}
-              />
-            </View>
-          }
-        />
-      ) : (
-        <FlatList
-          data={seguidas}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.list, !seguidas.length && styles.emptyList]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
-          renderItem={({ item }) => (
-            <View style={styles.seguidaItem}>
-              <PublicationCard publicacion={item} onPress={() => handleVerSeguimiento(item)} />
-              <TouchableOpacity
-                style={styles.botonDejarDeSeguir}
-                onPress={() => handleDejarDeSeguir(item)}
-                disabled={sinConexion}
-              >
-                <Text style={styles.botonDejarDeSeguirText}>Dejar de seguir</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          ListEmptyComponent={
-            <View style={styles.vacio}>
-              <Text style={styles.vacioIcono}>📌</Text>
-              <Text style={styles.vacioTitulo}>No seguís publicaciones</Text>
-              <Text style={styles.vacioTexto}>
-                {'Entrá al detalle de cualquier publicación y tocá "Seguir" para enterarte si cambia de estado (en reclamo o resuelta).'}
-              </Text>
-              <Button
-                title="Explorar publicaciones"
-                onPress={() => navigation.navigate('Buscar')}
-                style={styles.botonVacio}
-              />
-            </View>
-          }
-        />
-      )}
+      ) : null}
+      <PublicationCard publicacion={item} onPress={onPress} />
+      <Button
+        title="Dejar de seguir"
+        icon="bookmark"
+        variant="ghost"
+        size="sm"
+        onPress={onDejarDeSeguir}
+        loading={busy}
+        disabled={sinConexion}
+        style={styles.dejar}
+      />
     </View>
   );
 }
@@ -311,98 +349,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  avisoSinConexion: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    fontSize: 12,
-    color: colors.textMuted,
-    backgroundColor: '#FEF3C7',
-    textAlign: 'center',
-  },
-  tabs: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-  },
-  tabSelected: {
-    borderBottomWidth: 2,
-    borderBottomColor: colors.primary,
-  },
-  tabContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  tabText: {
-    fontSize: 14,
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
-  tabTextSelected: {
-    color: colors.primary,
-  },
-  badgeIndicador: {
-    backgroundColor: '#EF4444',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: radius.round,
-  },
-  badgeIndicadorText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  list: {
+  cabecera: {
     padding: spacing.md,
-  },
-  emptyList: {
-    flexGrow: 1,
-  },
-  centrado: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  seguidaItem: {
-    gap: 4,
-  },
-  botonDejarDeSeguir: {
-    alignSelf: 'flex-end',
-    paddingVertical: 2,
-    paddingHorizontal: spacing.sm,
-  },
-  botonDejarDeSeguirText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textDecorationLine: 'underline',
-  },
-  vacio: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
+    paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
-  vacioIcono: {
-    fontSize: 48,
+  lista: {
+    padding: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
-  vacioTitulo: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
+  seguida: {
+    gap: spacing.xs,
   },
-  vacioTexto: {
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
+  cambio: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm - 2,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md - 4,
   },
-  botonVacio: {
-    marginTop: spacing.sm,
+  cambioIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cambioText: {
+    ...typography.label,
+    color: '#B8411F',
+    fontWeight: '800',
+  },
+  dejar: {
+    alignSelf: 'flex-end',
   },
 });

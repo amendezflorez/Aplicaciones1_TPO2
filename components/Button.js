@@ -1,5 +1,16 @@
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing } from '../config/theme';
+
+// Botón único de la app. variant: primary | secondary | ghost | danger | accent.
+// size: md (48 dp, objetivo táctil recomendado) | sm (36 dp, para acciones en tarjetas).
+const VARIANTS = {
+  primary: { bg: colors.primary, fg: colors.white, border: colors.primary, pressed: colors.primaryDark },
+  accent: { bg: colors.accent, fg: colors.white, border: colors.accent, pressed: '#D9532F' },
+  secondary: { bg: colors.card, fg: colors.primary, border: colors.border, pressed: colors.primarySoft },
+  ghost: { bg: 'transparent', fg: colors.primary, border: 'transparent', pressed: colors.primarySoft },
+  danger: { bg: colors.card, fg: colors.error, border: colors.errorSoft, pressed: colors.errorSoft },
+};
 
 export default function Button({
   title,
@@ -7,55 +18,80 @@ export default function Button({
   loading = false,
   disabled = false,
   variant = 'primary',
+  size = 'md',
+  icon,
+  iconRight,
+  style,
+  accessibilityHint,
 }) {
+  const v = VARIANTS[variant] ?? VARIANTS.primary;
   const isDisabled = disabled || loading;
-  const isPrimary = variant === 'primary';
+  const small = size === 'sm';
+  const iconSize = small ? 16 : 19;
 
   return (
-    <TouchableOpacity
-      style={[
-        styles.button,
-        isPrimary ? styles.primary : styles.secondary,
-        isDisabled && styles.disabled,
-      ]}
+    <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
+      style={({ pressed }) => [
+        styles.base,
+        small ? styles.sm : styles.md,
+        { backgroundColor: pressed && !isDisabled ? v.pressed : v.bg, borderColor: v.border },
+        isDisabled && styles.disabled,
+        style,
+      ]}
     >
       {loading ? (
-        <ActivityIndicator color={isPrimary ? colors.white : colors.primary} />
+        <ActivityIndicator color={v.fg} />
       ) : (
-        <Text style={[styles.text, !isPrimary && styles.secondaryText]}>{title}</Text>
+        <View style={styles.row}>
+          {icon ? <Ionicons name={icon} size={iconSize} color={v.fg} /> : null}
+          <Text style={[styles.text, small && styles.textSm, { color: v.fg }]} numberOfLines={1}>
+            {title}
+          </Text>
+          {iconRight ? <Ionicons name={iconRight} size={iconSize} color={v.fg} /> : null}
+        </View>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
-    paddingVertical: spacing.md - 2,
-    paddingHorizontal: spacing.lg,
+  base: {
     borderRadius: radius.md,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
   },
-  primary: {
-    backgroundColor: colors.primary,
+  md: {
+    minHeight: 50,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 4,
   },
-  secondary: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.primary,
+  sm: {
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.sm + 2,
   },
-  disabled: {
-    opacity: 0.5,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   text: {
-    color: colors.white,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.1,
   },
-  secondaryText: {
-    color: colors.primary,
+  textSm: {
+    fontSize: 14,
+  },
+  disabled: {
+    opacity: 0.45,
   },
 });

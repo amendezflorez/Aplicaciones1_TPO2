@@ -47,3 +47,36 @@ export function formatDireccionGeocodificada(direccion) {
   if (calle) return calle;
   return [direccion.district, direccion.city].filter(Boolean).join(', ');
 }
+
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// "2026-11-18T14:30:00Z" -> "18 nov 2026" (o "18 nov" si es del año en curso).
+export function formatFecha(isoDate, { conAnio } = {}) {
+  if (!isoDate) return '';
+  const f = new Date(isoDate);
+  if (Number.isNaN(f.getTime())) return '';
+  const mostrarAnio = conAnio ?? f.getFullYear() !== new Date().getFullYear();
+  return `${f.getDate()} ${MESES[f.getMonth()]}${mostrarAnio ? ` ${f.getFullYear()}` : ''}`;
+}
+
+// "18 nov · 14:30"
+export function formatFechaHora(isoDate) {
+  if (!isoDate) return '';
+  const f = new Date(isoDate);
+  if (Number.isNaN(f.getTime())) return '';
+  return `${formatFecha(isoDate)} · ${String(f.getHours()).padStart(2, '0')}:${String(f.getMinutes()).padStart(2, '0')}`;
+}
+
+// Fecha del suceso para tarjetas: "18 nov · hace 3 días".
+export function formatFechaSuceso(isoDate) {
+  const abs = formatFecha(isoDate);
+  const rel = formatFechaRelativa(isoDate);
+  return abs && rel ? `${abs} · ${rel}` : abs || rel;
+}
+
+// Coordenadas legibles (consigna punto 3: "coordenadas junto a las fotos").
+// -34.58452, -58.42331 -> "-34.5845, -58.4233"
+export function formatCoordenadas(lat, lng) {
+  if (lat == null || lng == null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) return '';
+  return `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
+}

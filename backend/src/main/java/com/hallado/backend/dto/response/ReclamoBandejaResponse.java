@@ -6,6 +6,9 @@ import com.hallado.backend.entity.EstadoReclamo;
 import com.hallado.backend.entity.EstadoPublicacion;
 import com.hallado.backend.entity.TipoReclamo;
 
+// publicacionFotoUrl: foto principal de la publicación (miniatura en "Mis reclamos").
+// contraparteTelefono: teléfono de la otra parte, SOLO si el reclamo está aceptado y esa
+// persona eligió que su teléfono sea visible (Punto 2); si no, null.
 public record ReclamoBandejaResponse(
         String id,
         String publicacionId,
@@ -25,5 +28,7 @@ public record ReclamoBandejaResponse(
         Instant creadaEn,
         Instant venceEn,
         EstadoPublicacion publicacionEstado,
-        Instant fechaResolucion) {
+        Instant fechaResolucion,
+        String publicacionFotoUrl,
+        String contraparteTelefono) {
 }

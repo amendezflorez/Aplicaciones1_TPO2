@@ -81,6 +81,7 @@ public class PublicacionService {
 
     @Transactional
     public PageResponse<PublicacionResumenResponse> buscar(
+            String userId,
             String tipoBuscadoRaw,
             String categoriaRaw,
             String texto,
@@ -96,18 +97,19 @@ public class PublicacionService {
             Integer size) {
         vencerAbiertasVencidas();
         if (tipoBuscadoRaw == null || tipoBuscadoRaw.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "tipoBuscado es obligatorio.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Elegí si perdiste o encontraste algo.");
         }
-        TipoPublicacion tipoBuscado = TipoPublicacion.fromJson(tipoBuscadoRaw);
-        TipoPublicacion tipoAPublicar = tipoBuscado.opuesto();
+        // "todos" = explorar sin elegir perdí/encontré: se listan los dos tipos juntos.
+        boolean explorarTodo = tipoBuscadoRaw.trim().equalsIgnoreCase("todos");
+        TipoPublicacion tipoAPublicar = explorarTodo ? null : TipoPublicacion.fromJson(tipoBuscadoRaw).opuesto();
         Categoria categoria = (categoriaRaw == null || categoriaRaw.isBlank()) ? null : Categoria.fromJson(categoriaRaw);
 
         String orden = (ordenRaw == null || ordenRaw.isBlank()) ? "recientes" : ordenRaw;
         if (!orden.equals("recientes") && !orden.equals("cercanos")) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "orden inválido: " + orden);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "No reconocemos ese orden. Elegí recientes o cercanos.");
         }
         if (orden.equals("cercanos") && (lat == null || lng == null)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "orden=cercanos requiere lat/lng.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Para ordenar por cercanía necesitamos tu ubicación.");
         }
 
         Instant[] rangoFechas = resolverRango(rango, desdeRaw, hastaRaw);
@@ -115,17 +117,28 @@ public class PublicacionService {
         int pageNum = (page == null || page < 0) ? 0 : page;
         int pageSize = (size == null || size <= 0) ? DEFAULT_PAGE_SIZE : Math.min(size, MAX_PAGE_SIZE);
 
-        List<Publicacion> resultados = publicacionRepository.buscar(
-                tipoAPublicar,
-                categoria,
-                (barrioId == null || barrioId.isBlank()) ? null : barrioId,
-                rangoFechas[0],
-                rangoFechas[1],
-                (texto == null || texto.isBlank()) ? null : texto);
+        String barrioFiltro = (barrioId == null || barrioId.isBlank()) ? null : barrioId;
+        String textoFiltro = (texto == null || texto.isBlank()) ? null : texto;
+        List<Publicacion> encontradas = new ArrayList<>();
+        if (explorarTodo) {
+            for (TipoPublicacion t : TipoPublicacion.values()) {
+                encontradas.addAll(publicacionRepository.buscar(
+                        t, categoria, barrioFiltro, rangoFechas[0], rangoFechas[1], textoFiltro));
+            }
+            encontradas.sort(Comparator.comparing(Publicacion::getFechaSuceso).reversed());
+        } else {
+            encontradas.addAll(publicacionRepository.buscar(
+                    tipoAPublicar, categoria, barrioFiltro, rangoFechas[0], rangoFechas[1], textoFiltro));
+        }
+        // Las publicaciones propias no se listan: nadie busca sus propias pérdidas/hallazgos
+        // (se gestionan desde "Mis publicaciones") ni puede reclamarlas.
+        List<Publicacion> resultados = encontradas.stream()
+                .filter(p -> p.getPublicador() == null || !p.getPublicador().getId().equals(userId))
+                .toList();
 
         if (radioKm != null) {
             if (lat == null || lng == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "radioKm requiere lat/lng.");
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Para filtrar por distancia necesitamos tu ubicación.");
             }
             resultados = resultados.stream()
                     .filter(p -> GeoUtils.distanciaKm(lat, lng, p.getLat(), p.getLng()) <= radioKm)
@@ -178,7 +191,7 @@ public class PublicacionService {
         }
 
         if (body.tipo() == null || body.tipo().isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "tipo es obligatorio.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Elegí si perdiste o encontraste algo.");
         }
         TipoPublicacion tipo = TipoPublicacion.fromJson(body.tipo());
 
@@ -418,11 +431,17 @@ public class PublicacionService {
             case "personalizado" -> {
                 if (desdeRaw == null || hastaRaw == null) {
                     throw new ApiException(
-                            HttpStatus.BAD_REQUEST, "rango=personalizado requiere desde y hasta.");
+                            HttpStatus.BAD_REQUEST, "Elegí la fecha desde y la fecha hasta del rango.");
                 }
-                yield new Instant[] {parseInstant(desdeRaw, "desde"), parseInstant(hastaRaw, "hasta")};
+                Instant desde = parseInstant(desdeRaw, "desde");
+                Instant hasta = parseInstant(hastaRaw, "hasta");
+                if (desde.isAfter(hasta)) {
+                    throw new ApiException(
+                            HttpStatus.BAD_REQUEST, "La fecha desde no puede ser posterior a la fecha hasta.");
+                }
+                yield new Instant[] {desde, hasta};
             }
-            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "rango inválido: " + rango);
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "El rango de fechas elegido no es válido.");
         };
     }
 
@@ -430,7 +449,7 @@ public class PublicacionService {
         try {
             return Instant.parse(raw);
         } catch (Exception e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, campo + " inválido, formato esperado ISO-8601.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "La fecha " + campo + " no es válida.");
         }
     }
 }

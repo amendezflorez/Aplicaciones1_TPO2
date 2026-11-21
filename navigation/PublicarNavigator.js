@@ -1,6 +1,9 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import MisPublicacionesScreen from '../screens/publicar/MisPublicacionesScreen';
 import PublicarWizardScreen from '../screens/publicar/PublicarWizardScreen';
+import { stackScreenOptions } from '../config/theme';
+import { renderCampana } from './renderCampana';
+
 
 const Stack = createNativeStackNavigator();
 
@@ -10,7 +13,7 @@ const Stack = createNativeStackNavigator();
 // ahí, no al revés.
 export default function PublicarNavigator() {
   return (
-    <Stack.Navigator initialRouteName="MisPublicaciones">
+    <Stack.Navigator screenOptions={stackScreenOptions} initialRouteName="MisPublicaciones">
       <Stack.Screen
         name="MisPublicaciones"
         component={MisPublicacionesScreen}
@@ -19,9 +22,9 @@ export default function PublicarNavigator() {
         // DetallePublicacionScreen) native-stack a veces infiere que hay "algo antes" en
         // el historial y dibuja una flecha de todas formas, aunque sea la primera pantalla
         // de este stack y no haya a dónde volver dentro de él.
-        options={{ title: 'Mis publicaciones', headerBackVisible: false }}
+        options={{ title: 'Mis publicaciones', headerBackVisible: false, headerRight: renderCampana }}
       />
-      <Stack.Screen name="PublicarWizard" component={PublicarWizardScreen} options={{ title: 'Publicar' }} />
+      <Stack.Screen name="PublicarWizard" component={PublicarWizardScreen} options={{ title: 'Nueva publicación' }} />
     </Stack.Navigator>
   );
 }

@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, File, Paths } from 'expo-file-system';
 import { STORAGE_KEYS } from '../config/constants';
@@ -72,6 +73,8 @@ export async function borrarRegistroBorrador(userId) {
 // URI persistente. idempotent:true porque esta función se llama una vez por foto elegida
 // y no hace falta chequear "exists" antes: crear un directorio que ya existe no es error.
 export async function copiarFotoAlBorrador(uriOrigen, clientRequestId) {
+  // En web (solo vista previa de desarrollo) expo-file-system no existe: se usa la URI tal cual.
+  if (Platform.OS === 'web') return uriOrigen;
   const dir = dirDe(clientRequestId);
   dir.create({ intermediates: true, idempotent: true });
   const nombre = `foto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
@@ -89,6 +92,29 @@ export async function copiarFotoAlBorrador(uriOrigen, clientRequestId) {
 // - Existe pero fuera de Paths.document (caché): se copia al directorio del borrador.
 // - No existe: se descarta y se cuenta en `perdidas` para avisarle a la persona.
 export async function restaurarFotosDelBorrador(fotos = [], clientRequestId) {
+  // Web (solo vista previa de desarrollo): no hay sistema de archivos. Las URI blob: dejan
+  // de existir al recargar la página, así que se comprueban igual que un archivo borrado en
+  // el celular: si ya no responden se descartan y se avisa para volver a agregarlas.
+  if (Platform.OS === 'web') {
+    const vigentes = [];
+    let faltantes = 0;
+    for (const foto of fotos) {
+      if (!foto?.uri) {
+        faltantes += 1;
+        continue;
+      }
+      if (foto.uri.startsWith('blob:') && !foto.url) {
+        try {
+          await fetch(foto.uri);
+        } catch {
+          faltantes += 1;
+          continue;
+        }
+      }
+      vigentes.push(foto);
+    }
+    return { fotos: vigentes, perdidas: faltantes };
+  }
   const restauradas = [];
   let perdidas = 0;
   for (const foto of fotos) {
@@ -119,6 +145,7 @@ export async function restaurarFotosDelBorrador(fotos = [], clientRequestId) {
 }
 
 export function existeArchivo(uri) {
+  if (Platform.OS === 'web') return true;
   try {
     return Boolean(uri) && new File(uri).exists;
   } catch {

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
 import { borrarRegistroBorrador, cargarBorrador, guardarBorrador } from '../borradorPublicacionStorage';
 
@@ -61,6 +62,8 @@ async function guardarCola(userId, cola, { lanzar = false } = {}) {
 // las fotos compartidas entre el borrador y la cola, donde descartar uno borraría las del
 // otro. Solo si también falla la copia quedan las URIs originales (no se pierde nada).
 async function trasladarFotos(clientRequestId, carpetaOrigen, carpetaDestino, fotos) {
+  // Web (solo vista previa de desarrollo): no hay sistema de archivos; se usan las URI tal cual.
+  if (Platform.OS === 'web') return fotos;
   const origen = new Directory(Paths.document, carpetaOrigen, clientRequestId);
   if (!origen.exists) return fotos;
   const padre = new Directory(Paths.document, carpetaDestino);

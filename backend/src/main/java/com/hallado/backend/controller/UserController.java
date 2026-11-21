@@ -5,6 +5,7 @@ import com.hallado.backend.dto.response.PhotoResponse;
 import com.hallado.backend.dto.response.PublicUserResponse;
 import com.hallado.backend.dto.response.UserResponse;
 import com.hallado.backend.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,7 +34,7 @@ public class UserController {
     }
 
     @PutMapping("/users/me")
-    public UserResponse updateMe(@RequestAttribute("userId") String userId, @RequestBody UpdateMeRequest body) {
+    public UserResponse updateMe(@RequestAttribute("userId") String userId, @Valid @RequestBody UpdateMeRequest body) {
         return userService.updateMe(userId, body);
     }
 

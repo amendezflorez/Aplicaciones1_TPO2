@@ -68,6 +68,16 @@ public class SeguimientoService {
                 });
     }
 
+    // Cantidad de publicaciones seguidas cuyo estado cambió desde la última vez que se
+    // vieron (mismo criterio que "cambioEstado" del listado). Alimenta el badge de la tab.
+    @Transactional(readOnly = true)
+    public long contarConCambio(String userId) {
+        return seguimientoRepository.findByUsuarioIdOrderByCreadaEnDesc(userId).stream()
+                .filter(s -> s.getUltimoEstadoVisto() != null
+                        && s.getUltimoEstadoVisto() != s.getPublicacion().getEstado())
+                .count();
+    }
+
     @Transactional(readOnly = true)
     public List<SeguimientoResponse> listar(String userId) {
         return seguimientoRepository.findByUsuarioIdOrderByCreadaEnDesc(userId).stream()

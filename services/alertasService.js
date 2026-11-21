@@ -15,3 +15,7 @@ export const pausarAlerta = async (id, pausada) =>
 
 export const revisarAlerta = async (id) =>
   (await api.post(`/alertas/${id}/revisar`)).data;
+
+// Resumen liviano para el badge de la tab "Alertas": { alertas, seguidas }.
+// alertas = publicaciones nuevas en alertas activas; seguidas = seguidas que cambiaron de estado.
+export const getNovedades = async () => (await api.get('/alertas/novedades')).data;

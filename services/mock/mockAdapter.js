@@ -80,19 +80,19 @@ async function loadDb() {
       {
         id: 'al-1',
         usuarioId: 'u-demo',
-        tipoBuscado: 'perdi',
+        tipoBuscado: 'perdido',
         categoria: 'mascotas',
         texto: 'perro caniche',
         barrio: BARRIOS[0],
         creadaEn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
         ultimaRevision: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        novedadesCount: 2,
+        novedadesCount: 1,
         pausada: false,
       },
       {
         id: 'al-2',
         usuarioId: 'u-demo',
-        tipoBuscado: 'encontre',
+        tipoBuscado: 'encontrado',
         categoria: 'documentos',
         texto: 'dni',
         barrio: BARRIOS[1],
@@ -172,6 +172,8 @@ async function loadDb() {
         fotos: [],
         estado: 'abierta',
         preguntaVerificacion: null,
+        creadaEn: new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString(),
+        venceEn: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
       },
     ];
   }
@@ -233,6 +235,27 @@ async function loadDb() {
       fotos: [],
       estado: 'en_reclamo',
       preguntaVerificacion: '¿Qué tarjeta guardabas en la billetera?',
+    });
+    await saveDb();
+  }
+  if (!db.publicaciones.some((publicacion) => publicacion.id === 'pub-caniche-encontrado-demo')) {
+    // Coincide con la alerta demo "perro caniche" (Mascotas, Palermo) para que "nuevas coincidencias" sea real.
+    db.publicaciones.push({
+      id: 'pub-caniche-encontrado-demo',
+      publicadorId: 'u-2',
+      tipo: 'encontrado',
+      titulo: 'Encontré un perro caniche blanco en Palermo',
+      descripcion: 'Perro caniche blanco con collar azul, muy dócil. Lo tengo en casa.',
+      categoria: 'mascotas',
+      barrio: BARRIOS[0],
+      fechaSuceso: new Date(ahora - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      franjaHoraria: 'noche',
+      lat: -34.5889,
+      lng: -58.4300,
+      fotoPrincipalUrl: null,
+      fotos: [],
+      estado: 'abierta',
+      preguntaVerificacion: '¿Cómo se llama tu perro?',
     });
     await saveDb();
   }
@@ -499,6 +522,16 @@ async function loadDb() {
         recuperadorId: 'u-demo',
         fechaResolucion: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
       },
+      {
+        id: 'caso-3',
+        publicacionId: 'pub-demo-3',
+        publicacionTitulo: 'Auriculares inalámbricos en Palermo',
+        publicacionCategoria: 'electronica',
+        publicacionFotoPrincipalUrl: null,
+        devolvedorId: 'u-demo',
+        recuperadorId: 'u-2',
+        fechaResolucion: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
+      },
     ];
   }
   if (!db.valoraciones) {
@@ -512,6 +545,55 @@ async function loadDb() {
         comentario: 'Excelente vecino, me devolvió todo intacto y a tiempo.',
         agradecimientoPublico: '¡Muchísimas gracias Demo por tu enorme honestidad y buena onda!',
         creadaEn: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+  }
+  if (!db.notificaciones) {
+    const hace = (min) => new Date(Date.now() - min * 60 * 1000).toISOString();
+    db.notificaciones = [
+      {
+        id: 'n-1',
+        usuarioId: 'u-demo',
+        tipo: 'reclamo_recibido',
+        titulo: 'Alguien dice que es suyo',
+        cuerpo: 'Lucía reclamó «Llaves con llavero azul». Tenés 48 h para responder.',
+        reclamoId: 'reclamo-recibido-demo',
+        publicacionId: 'pub-demo-1',
+        leida: false,
+        creadaEn: hace(12),
+      },
+      {
+        id: 'n-2',
+        usuarioId: 'u-demo',
+        tipo: 'encuentro_propuesto',
+        titulo: 'Te propusieron un punto de encuentro',
+        cuerpo: 'Martín propuso encontrarse en Av. Cabildo 2040 para devolver «Mochila negra».',
+        reclamoId: 'reclamo-encuentro-demo',
+        publicacionId: 'pub-ana-2',
+        leida: false,
+        creadaEn: hace(95),
+      },
+      {
+        id: 'n-3',
+        usuarioId: 'u-demo',
+        tipo: 'reclamo_aceptado',
+        titulo: '¡Aceptaron tu reclamo!',
+        cuerpo: 'Tu reclamo sobre «Perro labrador» fue aceptado. Coordiná la devolución.',
+        reclamoId: 'reclamo-enviado-mapa-extra-demo',
+        publicacionId: 'pub-mapa-extra-demo',
+        leida: true,
+        creadaEn: hace(60 * 26),
+      },
+      {
+        id: 'n-4',
+        usuarioId: 'u-demo',
+        tipo: 'reclamo_vencido',
+        titulo: 'Tu reclamo venció',
+        cuerpo: 'Pasaron 48 h sin respuesta sobre «Auriculares». Te quedan 2 intentos.',
+        reclamoId: 'reclamo-enviado-vencido-demo',
+        publicacionId: 'pub-ana-1',
+        leida: true,
+        creadaEn: hace(60 * 24 * 9),
       },
     ];
   }
@@ -677,6 +759,45 @@ async function route(config) {
   // ---------- Barrios ----------
   if (key === 'get /barrios') return respond(200, BARRIOS);
 
+  // ---------- Notificaciones y dispositivos (Punto 12) ----------
+  if (url.startsWith('/notificaciones') || url.startsWith('/dispositivos')) {
+    const me = authUser(config);
+    if (!me) return respond(401, { message: 'No autorizado.' });
+    db.notificaciones = db.notificaciones || [];
+    const mias = () =>
+      db.notificaciones
+        .filter((n) => n.usuarioId === me.id)
+        .sort((a, b) => new Date(b.creadaEn) - new Date(a.creadaEn));
+    const publica = ({ usuarioId, ...resto }) => resto;
+
+    if (method === 'get' && url === '/notificaciones') {
+      const lista = mias();
+      return respond(200, { data: lista.map(publica), noLeidas: lista.filter((n) => !n.leida).length });
+    }
+    if (method === 'get' && url === '/notificaciones/no-leidas') {
+      return respond(200, { noLeidas: mias().filter((n) => !n.leida).length });
+    }
+    if (method === 'post' && url === '/notificaciones/leer-todas') {
+      mias().forEach((n) => {
+        n.leida = true;
+      });
+      await saveDb();
+      return respond(204, null);
+    }
+    const leidaMatch = url.match(/^\/notificaciones\/([^/]+)\/leida$/);
+    if (method === 'patch' && leidaMatch) {
+      const n = mias().find((x) => x.id === leidaMatch[1]);
+      if (!n) return respond(404, { message: 'No encontramos lo que buscabas.' });
+      n.leida = true;
+      await saveDb();
+      return respond(200, publica(n));
+    }
+    // El mock no envía push reales: registrar/dar de baja el dispositivo es un no-op.
+    if (method === 'post' && (url === '/dispositivos' || url === '/dispositivos/baja')) {
+      return respond(204, null);
+    }
+  }
+
   // ---------- Perfil propio (requiere token) ----------
   if (url.startsWith('/users/me')) {
     const me = authUser(config);
@@ -686,11 +807,12 @@ async function route(config) {
 
     if (key === 'put /users/me') {
       const barrio = BARRIOS.find((b) => b.id === body.barrioId) ?? me.barrio;
+      // Igual que el backend: solo se aplican los campos presentes; phone "" lo borra.
       Object.assign(me, {
-        name: body.name ?? me.name,
+        name: body.name != null ? String(body.name).trim() : me.name,
         barrio,
-        phone: body.phone ?? null,
-        phoneVisible: Boolean(body.phoneVisible),
+        phone: body.phone == null ? me.phone : String(body.phone).trim() || null,
+        phoneVisible: body.phoneVisible == null ? me.phoneVisible : Boolean(body.phoneVisible),
       });
       await saveDb();
       return respond(200, toOwnUser(me));
@@ -728,7 +850,75 @@ async function route(config) {
           reclamo.estado = 'vencido';
         }
       });
-      return respond(200, reclamos);
+      // Igual que la bandeja real: estado de la publicación, fecha de resolución y foto.
+      return respond(200, reclamos.map((reclamo) => {
+        const pub = (db.publicaciones || []).find((item) => item.id === reclamo.publicacionId);
+        return {
+          ...reclamo,
+          publicacionEstado: pub?.estado ?? reclamo.publicacionEstado ?? null,
+          publicacionFotoUrl: pub?.fotoPrincipalUrl ?? null,
+          fechaResolucion: pub?.fechaResolucion ?? reclamo.fechaResolucion ?? null,
+          // Teléfono de la contraparte: solo con reclamo aceptado y si lo dejó visible.
+          contraparteTelefono: (() => {
+            if (reclamo.estado !== 'aceptado') return null;
+            const otroId = reclamo.autorId === me.id ? reclamo.publicadorId : reclamo.autorId;
+            const otro = db.users.find((u) => u.id === otroId);
+            return otro?.phoneVisible && otro.phone ? otro.phone : null;
+          })(),
+        };
+      }));
+    }
+
+    // Punto 8 (mock): negociación del punto de encuentro, guardada en db.encuentrosMock.
+    const encuentroMatch = url.match(/^\/reclamos\/([^/]+)\/encuentro(?:\/propuestas(?:\/([^/]+)\/aceptar)?)?$/);
+    if (encuentroMatch) {
+      const reclamo = (db.reclamos || []).find((item) => item.id === encuentroMatch[1]);
+      if (!reclamo) return respond(404, { message: 'No encontramos ese reclamo.' });
+      if (reclamo.autorId !== me.id && reclamo.publicadorId !== me.id) return respond(403);
+      if (reclamo.estado !== 'aceptado') {
+        return respond(409, { message: 'El reclamo tiene que estar aceptado para coordinar la devolución.' });
+      }
+      db.encuentrosMock = db.encuentrosMock || {};
+      const enc = db.encuentrosMock[reclamo.id] || { propuestaActual: null, ubicacionAcordada: null, historial: [] };
+      const vista = () => ({
+        reclamoId: reclamo.id,
+        estado: enc.ubicacionAcordada ? 'acordado' : enc.propuestaActual ? 'pendiente' : 'sin_propuesta',
+        propuestaActual: enc.propuestaActual,
+        ubicacionAcordada: enc.ubicacionAcordada,
+        historial: enc.historial,
+      });
+      if (method === 'get') return respond(200, vista());
+      if (method === 'post' && !encuentroMatch[2] && url.endsWith('/propuestas')) {
+        if (!body.direccion || !String(body.direccion).trim()) {
+          return respond(400, { message: 'Ingresá una dirección o lugar para el encuentro.' });
+        }
+        const propuesta = {
+          id: `prop-${Date.now()}`,
+          direccion: String(body.direccion).trim(),
+          referencia: body.referencia || null,
+          latitud: body.latitud ?? null,
+          longitud: body.longitud ?? null,
+          propuestoPorId: me.id,
+          propuestoEn: new Date().toISOString(),
+          estado: 'pendiente',
+        };
+        enc.propuestaActual = propuesta;
+        enc.ubicacionAcordada = null;
+        enc.historial = [...enc.historial, propuesta];
+        db.encuentrosMock[reclamo.id] = enc;
+        await saveDb();
+        return respond(201, vista());
+      }
+      if (method === 'post' && encuentroMatch[2]) {
+        if (!enc.propuestaActual || enc.propuestaActual.id !== encuentroMatch[2]) {
+          return respond(409, { message: 'La propuesta cambió. Actualizá la pantalla e intentá de nuevo.' });
+        }
+        enc.propuestaActual = { ...enc.propuestaActual, estado: 'aceptada' };
+        enc.ubicacionAcordada = enc.propuestaActual;
+        db.encuentrosMock[reclamo.id] = enc;
+        await saveDb();
+        return respond(200, vista());
+      }
     }
 
     if (key === 'post /reclamos/foto') {
@@ -757,8 +947,86 @@ async function route(config) {
     if (!me) return respond(401);
 
     if (key === 'get /publicaciones/mias') {
-      const mias = (db.publicaciones || []).filter(p => p.publicadorId === me.id);
+      // Misma forma que MiPublicacionResponse: creadaEn/venceEn (30 días de vigencia) y
+      // puedeRenovar (vencida, o abierta a 5 días o menos de vencer).
+      const ahoraMs = Date.now();
+      const mias = (db.publicaciones || []).filter(p => p.publicadorId === me.id).map((p) => {
+        const creadaEn = p.creadaEn || p.fechaSuceso;
+        const venceEn = p.venceEn || new Date(new Date(creadaEn).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const vencida = p.estado === 'vencida' || (p.estado === 'abierta' && new Date(venceEn).getTime() < ahoraMs);
+        const puedeRenovar = vencida
+          || (p.estado === 'abierta' && new Date(venceEn).getTime() - ahoraMs <= 5 * 24 * 60 * 60 * 1000);
+        return { ...p, creadaEn, venceEn, estado: vencida ? 'vencida' : p.estado, puedeRenovar };
+      });
       return respond(200, mias);
+    }
+
+    if (key === 'post /publicaciones/fotos') {
+      return respond(201, { photoUrl: `https://picsum.photos/seed/hallado-${Date.now()}/640/480` });
+    }
+
+    if (key === 'post /publicaciones') {
+      const existente = body.clientRequestId
+        && (db.publicaciones || []).find(p => p.publicadorId === me.id && p.clientRequestId === body.clientRequestId);
+      if (existente) return respond(200, existente);
+      const barrio = BARRIOS.find((b) => b.id === body.barrioId);
+      if (!body.titulo?.trim() || !body.descripcion?.trim() || !body.categoria || !barrio || !body.fotos?.length) {
+        return respond(400);
+      }
+      if (new Date(body.fechaSuceso).getTime() > Date.now()) return respond(400);
+      const ahoraCrear = Date.now();
+      const nueva = {
+        id: `pub-${ahoraCrear}`,
+        publicadorId: me.id,
+        clientRequestId: body.clientRequestId || null,
+        tipo: body.tipo,
+        titulo: body.titulo.trim(),
+        descripcion: body.descripcion.trim(),
+        categoria: body.categoria,
+        barrio,
+        fechaSuceso: body.fechaSuceso,
+        franjaHoraria: body.franjaHoraria || null,
+        lat: body.latExacta ?? barrio.lat ?? -34.6,
+        lng: body.lngExacta ?? barrio.lng ?? -58.43,
+        fotoPrincipalUrl: body.fotos[0],
+        fotos: body.fotos,
+        estado: 'abierta',
+        preguntaVerificacion: body.tipo === 'encontrado' ? body.preguntaVerificacion : null,
+        creadaEn: new Date(ahoraCrear).toISOString(),
+        venceEn: new Date(ahoraCrear + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      db.publicaciones = db.publicaciones || [];
+      db.publicaciones.unshift(nueva);
+      await saveDb();
+      return respond(201, nueva);
+    }
+
+    const renovarMatch = url.match(/^\/publicaciones\/([^/]+)\/renovar$/);
+    if (method === 'post' && renovarMatch) {
+      const pub = (db.publicaciones || []).find(p => p.id === renovarMatch[1] && p.publicadorId === me.id);
+      if (!pub) return respond(404);
+      pub.estado = 'abierta';
+      pub.venceEn = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await saveDb();
+      return respond(200, { ...pub, creadaEn: pub.creadaEn || pub.fechaSuceso, puedeRenovar: false });
+    }
+
+    // Punto 11 (mock): confirmar entrega con QR; marca la publicación como resuelta.
+    const devolucionMatch = url.match(/^\/publicaciones\/([^/]+)\/devolucion\/confirmar$/);
+    if (method === 'post' && devolucionMatch) {
+      const pub = (db.publicaciones || []).find((item) => item.id === devolucionMatch[1]);
+      const rec = (db.reclamos || []).find((item) => item.id === body.reclamoId);
+      if (!pub || !rec) return respond(404, { message: 'No encontramos la publicación o el reclamo.' });
+      if (pub.estado === 'resuelta') return respond(409, { message: 'Esta entrega ya fue confirmada.' });
+      pub.estado = 'resuelta';
+      pub.fechaResolucion = new Date().toISOString();
+      await saveDb();
+      return respond(200, {
+        reclamoId: rec.id,
+        publicacionId: pub.id,
+        estado: 'resuelta',
+        fechaResolucion: pub.fechaResolucion,
+      });
     }
 
     const reclamoMatch = url.match(/^\/publicaciones\/([^/]+)\/reclamos(\/mio)?$/);
@@ -791,7 +1059,9 @@ async function route(config) {
         const intentos = db.reclamos.filter(
           (item) => item.publicacionId === publicacion.id && item.autorId === me.id
         ).length;
-        if (intentos >= 3) return respond(409);
+        if (intentos >= 3) {
+          return respond(409, { message: 'Ya alcanzaste el máximo de intentos de reclamo sobre esta publicación.' });
+        }
         const publicador = db.users.find((user) => user.id === publicacion.publicadorId);
         const reclamo = {
           id: `reclamo-${Date.now()}`,
@@ -823,43 +1093,100 @@ async function route(config) {
     if (method === 'get' && detalleMatch && !url.includes('/seguir') && !url.includes('/fotos')) {
       const p = (db.publicaciones || []).find(item => item.id === detalleMatch[1]);
       if (!p) return respond(404);
-      const pubUser = db.users.find(u => u.id === p.publicadorId) || { id: p.publicadorId, name: 'Usuario', photoUrl: null, reputation: { returnsCount: 0, positiveCount: 0 } };
+      const pubUser = db.users.find(u => u.id === p.publicadorId) || { id: p.publicadorId, name: 'Usuario', photoUrl: null, reputation: emptyReputation() };
       const siguiendo = (db.seguimientos || []).some(s => s.usuarioId === me.id && s.id === p.id);
-      const yaReclame = (db.reclamos || []).some(
-        (reclamo) => reclamo.publicacionId === p.id
-          && reclamo.autorId === me.id
-          && ['pendiente', 'aceptado'].includes(reclamo.estado)
+      const esPropia = p.publicadorId === me.id;
+      const reclamosPropios = (db.reclamos || []).filter(
+        (reclamo) => reclamo.publicacionId === p.id && reclamo.autorId === me.id
       );
+      // Igual que el backend: solo un reclamo vivo (pendiente/aceptado) bloquea reclamar de
+      // nuevo; intentosRestantes = 3 menos los reclamos hechos (mínimo 0).
+      const yaReclame = !esPropia && reclamosPropios.some((reclamo) => ['pendiente', 'aceptado'].includes(reclamo.estado));
+      const intentosRestantes = esPropia ? 3 : Math.max(0, 3 - reclamosPropios.length);
+      const aceptado = reclamosPropios.some((reclamo) => reclamo.estado === 'aceptado');
+      const revelar = esPropia || aceptado;
       return respond(200, {
         ...p,
-        direccionExacta: p.publicadorId === me.id ? 'Dirección privada' : null,
-        latExacta: null,
-        lngExacta: null,
-        publicador: { id: pubUser.id, name: pubUser.name, photoUrl: pubUser.photoUrl, reputation: pubUser.reputation },
-        esPropia: p.publicadorId === me.id,
+        direccionExacta: revelar ? p.direccionExacta || 'Av. Santa Fe 3253, Palermo' : null,
+        latExacta: revelar ? p.latExacta ?? p.lat : null,
+        lngExacta: revelar ? p.lngExacta ?? p.lng : null,
+        publicador: {
+          id: pubUser.id,
+          name: pubUser.name,
+          photoUrl: pubUser.photoUrl,
+          reputation: pubUser.reputation || emptyReputation(),
+          badges: badgesFor(pubUser),
+        },
+        esPropia,
         yaReclame,
         siguiendo,
+        intentosRestantes,
       });
     }
 
     if (method === 'get' && url === '/publicaciones') {
       const params = config.params || {};
+      if (!params.tipoBuscado) {
+        return respond(400, { message: 'Elegí si perdiste o encontraste algo.' });
+      }
       const tipoOpuesto =
-        params.tipoBuscado === 'perdi' || params.tipoBuscado === 'perdido'
+        params.tipoBuscado === 'todos'
+          ? 'todos'
+          : params.tipoBuscado === 'perdi' || params.tipoBuscado === 'perdido'
           ? 'encontrado'
           : params.tipoBuscado === 'encontre' || params.tipoBuscado === 'encontrado'
             ? 'perdido'
             : null;
-      const filtradas = (db.publicaciones || []).filter(p => {
-        if (tipoOpuesto && p.tipo !== tipoOpuesto) return false;
+      if (!tipoOpuesto) return respond(400, { message: 'Elegí si perdiste o encontraste algo.' });
+      if (params.orden === 'cercanos' && (params.lat == null || params.lng == null)) {
+        return respond(400, { message: 'Para ordenar por cercanía necesitamos tu ubicación.' });
+      }
+      const ahora = Date.now();
+      const DIA = 24 * 60 * 60 * 1000;
+      let desde = null;
+      let hasta = null;
+      if (params.rango === 'hoy') desde = ahora - DIA;
+      else if (params.rango === '3dias') desde = ahora - 3 * DIA;
+      else if (params.rango === 'semana') desde = ahora - 7 * DIA;
+      else if (params.rango === 'personalizado') {
+        if (!params.desde || !params.hasta) {
+          return respond(400, { message: 'Elegí la fecha desde y la fecha hasta del rango.' });
+        }
+        desde = new Date(params.desde).getTime();
+        hasta = new Date(params.hasta).getTime();
+      }
+      const texto = typeof params.texto === 'string' ? params.texto.trim().toLowerCase() : '';
+      const distancia = (p) => {
+        const rad = (g) => (g * Math.PI) / 180;
+        const dLat = rad(p.lat - Number(params.lat));
+        const dLng = rad(p.lng - Number(params.lng));
+        const h = Math.sin(dLat / 2) ** 2
+          + Math.cos(rad(Number(params.lat))) * Math.cos(rad(p.lat)) * Math.sin(dLng / 2) ** 2;
+        return 6371 * 2 * Math.asin(Math.sqrt(h));
+      };
+      // Como el backend: solo abierta/en_reclamo, sin las publicaciones propias.
+      let filtradas = (db.publicaciones || []).filter(p => {
+        if (p.publicadorId === me.id) return false;
+        if (!['abierta', 'en_reclamo'].includes(p.estado)) return false;
+        if (tipoOpuesto !== 'todos' && p.tipo !== tipoOpuesto) return false;
         if (params.categoria && p.categoria !== params.categoria) return false;
         if (params.barrioId && p.barrio?.id !== params.barrioId) return false;
+        const fecha = new Date(p.fechaSuceso).getTime();
+        if (desde != null && fecha < desde) return false;
+        if (hasta != null && fecha > hasta) return false;
+        if (texto && !`${p.titulo} ${p.descripcion}`.toLowerCase().includes(texto)) return false;
+        if (params.radioKm != null && params.lat != null && params.lng != null && distancia(p) > Number(params.radioKm)) return false;
         return true;
       });
+      filtradas = params.orden === 'cercanos'
+        ? filtradas.sort((a, b) => distancia(a) - distancia(b))
+        : filtradas.sort((a, b) => new Date(b.fechaSuceso) - new Date(a.fechaSuceso));
+      const size = Number(params.size) > 0 ? Number(params.size) : 10;
+      const page = Number(params.page) > 0 ? Number(params.page) : 0;
       return respond(200, {
-        data: filtradas,
-        page: 0,
-        size: 20,
+        data: filtradas.slice(page * size, page * size + size),
+        page,
+        size,
         total: filtradas.length,
       });
     }
@@ -869,6 +1196,15 @@ async function route(config) {
   if (url.startsWith('/alertas')) {
     const me = authUser(config);
     if (!me) return respond(401);
+
+    // Liviano para el badge de la tab: novedades en alertas activas + seguidas con cambio.
+    if (key === 'get /alertas/novedades') {
+      const alertas = (db.alertas || [])
+        .filter((a) => a.usuarioId === me.id && !a.pausada)
+        .reduce((sum, a) => sum + (a.novedadesCount || 0), 0);
+      const seguidas = (db.seguimientos || []).filter((s) => s.usuarioId === me.id && s.cambioEstado).length;
+      return respond(200, { alertas, seguidas });
+    }
 
     if (key === 'get /alertas') {
       const list = (db.alertas || []).filter((a) => a.usuarioId === me.id);
@@ -1012,6 +1348,13 @@ async function route(config) {
       if (!caso) return respond(404);
       if (caso.devolvedorId !== me.id && caso.recuperadorId !== me.id) return respond(403);
 
+      if (String(body?.comentario ?? '').trim().length > 250) {
+        return respond(400, { message: 'El mensaje no puede superar los 250 caracteres.' });
+      }
+      if (String(body?.agradecimientoPublico ?? '').trim().length > 250) {
+        return respond(400, { message: 'El agradecimiento no puede superar los 250 caracteres.' });
+      }
+
       const resolucionMs = new Date(caso.fechaResolucion).getTime();
       if (Date.now() > resolucionMs + 7 * 24 * 60 * 60 * 1000) {
         return respond(400, { message: 'El plazo de 7 días para valorar ha expirado.' });
@@ -1072,6 +1415,11 @@ async function route(config) {
     if (method === 'get' && url === '/historial') {
       const params = config.params || {};
       const tipoFiltro = params.tipo;
+      for (const campo of ['desde', 'hasta']) {
+        if (params[campo] && Number.isNaN(new Date(params[campo]).getTime())) {
+          return respond(400, { message: `La fecha "${campo}" no es válida.` });
+        }
+      }
 
       const casosMios = (db.casos || []).filter((c) => {
         const esDev = c.devolvedorId === me.id;
@@ -1160,6 +1508,33 @@ async function route(config) {
 export async function mockAdapter(config) {
   await loadDb();
   await new Promise((resolve) => setTimeout(resolve, LATENCY_MS));
+
+  // Gancho de pruebas: globalThis.__MOCK_FALLAS__ = [{ patron: 'publicaciones', metodo: 'get',
+  // status: 500 | 0 (sin red) | 4xx, message?, veces?: n }] fuerza errores para verificar cómo se
+  // comportan las pantallas. Si no existe la variable, no hace nada.
+  const fallas = globalThis.__MOCK_FALLAS__;
+  if (Array.isArray(fallas)) {
+    const falla = fallas.find(
+      (f) =>
+        new RegExp(f.patron).test(config.url) &&
+        (!f.metodo || f.metodo === config.method.toLowerCase()) &&
+        (f.veces === undefined || f.veces > 0)
+    );
+    if (falla) {
+      if (falla.veces !== undefined) falla.veces -= 1;
+      if (falla.status === 0) throw new AxiosError('Network Error', AxiosError.ERR_NETWORK, config, {});
+    }
+    if (falla && falla.status > 0) {
+      const resp = { data: falla.message ? { message: falla.message } : null, status: falla.status, statusText: String(falla.status), headers: {}, config, request: {} };
+      throw new AxiosError(
+        `Request failed with status code ${falla.status}`,
+        falla.status >= 500 ? AxiosError.ERR_BAD_RESPONSE : AxiosError.ERR_BAD_REQUEST,
+        config,
+        {},
+        resp
+      );
+    }
+  }
 
   const { status, data } = await route(config);
   const response = { data, status, statusText: String(status), headers: {}, config, request: {} };

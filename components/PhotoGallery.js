@@ -1,69 +1,92 @@
 import { useState } from 'react';
-import { Dimensions, FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { colors, radius, spacing } from '../config/theme';
 import FotoPublicacion from './FotoPublicacion';
 
-// Ancho del carrusel = ancho de pantalla menos el padding horizontal que ya aplica
-// <Screen> (spacing.md de cada lado) — si no, las fotos se ven más anchas que el resto
-// del contenido y quedan cortadas contra el borde.
-const GALLERY_WIDTH = Dimensions.get('window').width - spacing.md * 2;
-
-// Carrusel horizontal con puntos de paginación (sección 4.3 del plan). Reusa el patrón de
-// FlatList horizontal + onMomentumScrollEnd para saber qué foto está activa, sin traer
+// Carrusel horizontal a todo el ancho de la pantalla (sin bordes redondeados: pensado para
+// ir pegado arriba del detalle; quien lo use dentro de un contenedor con padding lo
+// compensa con márgenes negativos). Indicador de páginas: puntos sobre la foto y contador
+// "2/5". FlatList horizontal + onMomentumScrollEnd para saber qué foto está activa, sin
 // ninguna librería de carrusel.
-export default function PhotoGallery({ fotos }) {
+export default function PhotoGallery({ fotos, altura = 280, style }) {
+  const { width } = useWindowDimensions();
   const [activa, setActiva] = useState(0);
+  const estiloFoto = { width, height: altura };
 
   if (!fotos || fotos.length === 0) {
-    return <FotoPublicacion url={null} style={styles.imagen} iconSize={56} />;
+    return (
+      <View style={style}>
+        <FotoPublicacion url={null} style={estiloFoto} iconSize={64} />
+      </View>
+    );
   }
 
   const onScrollEnd = (event) => {
-    const index = Math.round(event.nativeEvent.contentOffset.x / GALLERY_WIDTH);
-    setActiva(index);
+    setActiva(Math.round(event.nativeEvent.contentOffset.x / width));
   };
 
   return (
-    <View>
+    <View style={style}>
       <FlatList
         data={fotos}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id ?? item.url)}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onScrollEnd}
-        renderItem={({ item }) => <FotoPublicacion key={item.url} url={item.url} style={styles.imagen} iconSize={56} />}
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        renderItem={({ item }) => <FotoPublicacion url={item.url} style={estiloFoto} iconSize={64} />}
       />
       {fotos.length > 1 ? (
-        <View style={styles.dots}>
-          {fotos.map((_, i) => (
-            <View key={i} style={[styles.dot, i === activa && styles.dotActiva]} />
-          ))}
-        </View>
+        <>
+          <View style={styles.contador} accessibilityLabel={`Foto ${activa + 1} de ${fotos.length}`}>
+            <Text style={styles.contadorTexto}>
+              {activa + 1}/{fotos.length}
+            </Text>
+          </View>
+          <View style={styles.dots} pointerEvents="none">
+            {fotos.map((_, i) => (
+              <View key={i} style={[styles.dot, i === activa && styles.dotActiva]} />
+            ))}
+          </View>
+        </>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  imagen: {
-    width: GALLERY_WIDTH,
-    height: 240,
-    borderRadius: radius.md,
+  contador: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 3,
+    borderRadius: radius.round,
+    backgroundColor: colors.overlay,
+  },
+  contadorTexto: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '700',
   },
   dots: {
+    position: 'absolute',
+    bottom: spacing.md,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 6,
-    marginTop: spacing.xs,
   },
   dot: {
-    width: 6,
-    height: 6,
+    width: 7,
+    height: 7,
     borderRadius: radius.round,
-    backgroundColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.55)',
   },
   dotActiva: {
-    backgroundColor: colors.primary,
+    width: 18,
+    backgroundColor: colors.white,
   },
 });

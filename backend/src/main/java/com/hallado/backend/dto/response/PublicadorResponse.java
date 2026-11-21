@@ -1,8 +1,11 @@
 package com.hallado.backend.dto.response;
 
-// Resumen del publicador tal como viaja embebido en PublicacionDetalleResponse (section 3
-// del plan de puntos 3-4). Deliberadamente más chico que PublicUserResponse: el detalle
-// de una publicación no necesita barrio/reputación/badges del publicador, solo lo
-// mínimo para mostrar la card y linkear a su perfil público (GET /users/{id}/public).
-public record PublicadorResponse(String id, String name, String photoUrl) {
+import java.util.List;
+
+// Resumen del publicador tal como viaja embebido en PublicacionDetalleResponse. Incluye la
+// reputación resumida y las insignias (mismos datos que GET /users/{id}/public) para que la
+// tarjeta del publicador en el detalle no necesite una segunda llamada. El resto del perfil
+// (barrio, antigüedad) queda en el perfil público.
+public record PublicadorResponse(
+        String id, String name, String photoUrl, ReputationResponse reputation, List<BadgeResponse> badges) {
 }

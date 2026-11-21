@@ -1,120 +1,221 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing } from '../config/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { colors, radius, spacing, typography } from '../config/theme';
+import { formatFecha, formatFechaHora } from '../utils/publicacionFormatters';
 import { resolverUrlFoto } from '../utils/fotoUrl';
+import { rolesReclamo, textoVencimiento } from '../utils/reclamoRoles';
 import Avatar from './Avatar';
 import Button from './Button';
+import Card from './Card';
+import Chip from './Chip';
+import EstadoChip from './EstadoChip';
+import FotoPublicacion from './FotoPublicacion';
 
-const ESTADOS = {
-  pendiente: 'Pendiente',
-  aceptado: 'Aceptado',
-  rechazado: 'Rechazado',
-  vencido: 'Vencido',
-};
-
+// Tarjeta de un reclamo en "Mis reclamos" (Punto 7). Muestra la publicación, quién reclama,
+// el tipo ("Es mío" / "Lo encontré"), las pruebas adjuntas y las acciones que correspondan
+// al estado: aceptar/rechazar (publicador), coordinar devolución y QR (reclamo aceptado).
 export default function ReclamoCard({
   reclamo,
-  recibido,
+  userId,
   onDecision,
+  onOpenPublicacion,
   onOpenEncuentro,
   onConfirmarEntrega,
-  busy,
+  onMostrarQr,
+  accionEnCurso,
   sinConexion,
 }) {
-  const persona = recibido
-    ? { name: reclamo.autorNombre, photoUrl: reclamo.autorFotoUrl }
-    : { name: reclamo.publicadorNombre, photoUrl: reclamo.publicadorFotoUrl };
-  const tipo = reclamo.tipo === 'es_mio' ? 'Es mío' : 'Lo encontré';
-  const vence = reclamo.venceEn ? new Date(reclamo.venceEn).toLocaleString() : null;
-  const esReceptor = reclamo.tipo === 'es_mio' ? !recibido : recibido;
-  const entregaConfirmada = reclamo.estado === 'aceptado'
-    && reclamo.publicacionEstado === 'resuelta';
+  const { recibido, soyTitular, otro } = rolesReclamo(reclamo, userId);
+  const esMio = reclamo.tipo === 'es_mio';
+  const vence = reclamo.estado === 'pendiente' ? textoVencimiento(reclamo.venceEn) : null;
+  const entregaConfirmada = reclamo.estado === 'aceptado' && reclamo.publicacionEstado === 'resuelta';
+  const enCurso = Boolean(accionEnCurso);
+  const barrio = reclamo.barrioEncontrado?.name;
 
   return (
-    <View style={styles.card}>
-      <View style={styles.heading}>
+    <Card style={styles.card}>
+      <Pressable
+        onPress={() => onOpenPublicacion(reclamo)}
+        accessibilityRole="button"
+        accessibilityLabel={`Ver la publicación ${reclamo.publicacionTitulo}`}
+        style={({ pressed }) => [styles.heading, pressed && styles.pressed]}
+      >
+        <FotoPublicacion url={reclamo.publicacionFotoUrl} style={styles.thumb} />
         <View style={styles.titleColumn}>
+          <View style={styles.chipsRow}>
+            <Chip
+              label={esMio ? 'Es mío' : 'Lo encontré'}
+              icon={esMio ? 'hand-left-outline' : 'search-outline'}
+              tone={esMio ? 'accent' : 'primary'}
+              size="sm"
+            />
+            <EstadoChip estado={reclamo.estado} />
+          </View>
           <Text style={styles.title} numberOfLines={2}>{reclamo.publicacionTitulo}</Text>
-          <Text style={styles.meta}>{tipo} · {new Date(reclamo.creadaEn).toLocaleDateString()}</Text>
+          <Text style={typography.caption}>Enviado el {formatFecha(reclamo.creadaEn)}</Text>
         </View>
-        <Text style={[styles.status, styles[`status_${reclamo.estado}`]]}>
-          {ESTADOS[reclamo.estado] || reclamo.estado}
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </Pressable>
+
+      <View style={styles.person}>
+        <Avatar uri={otro.fotoUrl} name={otro.nombre || ''} size={32} />
+        <Text style={styles.personName} numberOfLines={1}>
+          <Text style={typography.caption}>{recibido ? 'Reclama: ' : 'Publicó: '}</Text>
+          {otro.nombre || 'Usuario'}
         </Text>
       </View>
 
-      <View style={styles.person}>
-        <Avatar uri={persona.photoUrl} name={persona.name || ''} size={36} />
-        <Text style={styles.personName}>{recibido ? 'De' : 'Publicador'}: {persona.name || 'Usuario'}</Text>
-      </View>
+      {reclamo.respuestaPregunta || reclamo.descripcion || barrio || reclamo.fotoUrl ? (
+        <View style={styles.evidenceBox}>
+          {reclamo.respuestaPregunta ? (
+            <View>
+              <Text style={typography.overline}>Respuesta a la verificación</Text>
+              <Text style={styles.body}>{reclamo.respuestaPregunta}</Text>
+            </View>
+          ) : null}
+          {reclamo.descripcion ? (
+            <View>
+              <Text style={typography.overline}>Descripción</Text>
+              <Text style={styles.body}>{reclamo.descripcion}</Text>
+            </View>
+          ) : null}
+          {barrio ? (
+            <View style={styles.barrioRow}>
+              <Ionicons name="location-outline" size={16} color={colors.primary} />
+              <Text style={styles.body}>Lo encontró en {barrio}</Text>
+            </View>
+          ) : null}
+          {reclamo.fotoUrl ? (
+            <Image
+              source={{ uri: resolverUrlFoto(reclamo.fotoUrl) }}
+              style={styles.evidence}
+              accessibilityLabel="Foto adjunta al reclamo"
+            />
+          ) : null}
+        </View>
+      ) : null}
 
-      {reclamo.respuestaPregunta ? (
-        <Text style={styles.body}><Text style={styles.label}>Respuesta: </Text>{reclamo.respuestaPregunta}</Text>
-      ) : null}
-      {reclamo.descripcion ? (
-        <Text style={styles.body}><Text style={styles.label}>Descripción: </Text>{reclamo.descripcion}</Text>
-      ) : null}
-      {reclamo.barrioEncontrado?.name ? (
-        <Text style={styles.body}><Text style={styles.label}>Lo encontró en: </Text>{reclamo.barrioEncontrado.name}</Text>
-      ) : null}
-      {reclamo.fotoUrl ? (
-        <Image source={{ uri: resolverUrlFoto(reclamo.fotoUrl) }} style={styles.evidence} />
+      {vence ? (
+        <View style={[styles.deadline, vence.urgente && styles.deadlineUrgent]}>
+          <Ionicons
+            name="time-outline"
+            size={16}
+            color={vence.urgente ? colors.error : colors.warning}
+          />
+          <Text style={[styles.deadlineText, { color: vence.urgente ? colors.error : colors.warning }]}>
+            {vence.texto}
+          </Text>
+          <Text style={styles.deadlineHint}>
+            {recibido ? 'para responder' : 'sin respuesta'}
+          </Text>
+        </View>
       ) : null}
 
       {recibido && reclamo.estado === 'pendiente' ? (
-        <>
-          <Text style={styles.deadline}>Responder antes de {vence}</Text>
-          <View style={styles.actions}>
-            <Button
-              title="Rechazar"
-              variant="secondary"
-              onPress={() => onDecision(reclamo, 'rechazar')}
-              loading={busy}
-              disabled={sinConexion}
-            />
-            <Button
-              title="Aceptar"
-              onPress={() => onDecision(reclamo, 'aceptar')}
-              loading={busy}
-              disabled={sinConexion}
-            />
-          </View>
-        </>
+        <View style={styles.actions}>
+          <Button
+            title="Rechazar"
+            variant="danger"
+            icon="close"
+            onPress={() => onDecision(reclamo, 'rechazar')}
+            loading={accionEnCurso === 'rechazar'}
+            disabled={sinConexion || (enCurso && accionEnCurso !== 'rechazar')}
+            style={styles.flex}
+          />
+          <Button
+            title="Aceptar"
+            icon="checkmark"
+            onPress={() => onDecision(reclamo, 'aceptar')}
+            loading={accionEnCurso === 'aceptar'}
+            disabled={sinConexion || (enCurso && accionEnCurso !== 'aceptar')}
+            style={styles.flex}
+          />
+        </View>
       ) : null}
-      {entregaConfirmada ? (
-        <Text style={styles.resolved}>
-          Entrega confirmada{reclamo.fechaResolucion ? ` el ${new Date(reclamo.fechaResolucion).toLocaleString()}` : ''}.
+      {!recibido && reclamo.estado === 'pendiente' ? (
+        <Text style={typography.caption}>
+          Esperando que {otro.nombre || 'la otra persona'} responda tu reclamo.
         </Text>
       ) : null}
+
+      {reclamo.estado === 'rechazado' ? (
+        <Text style={typography.caption}>
+          {recibido ? 'Rechazaste este reclamo.' : 'El publicador rechazó este reclamo.'}
+        </Text>
+      ) : null}
+      {reclamo.estado === 'vencido' ? (
+        <Text style={typography.caption}>Venció sin respuesta a las 48 horas.</Text>
+      ) : null}
+
+      {entregaConfirmada ? (
+        <View style={styles.resolved}>
+          <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+          <Text style={styles.resolvedText}>
+            Entrega confirmada{reclamo.fechaResolucion ? ` el ${formatFechaHora(reclamo.fechaResolucion)}` : ''}.
+          </Text>
+        </View>
+      ) : null}
+
       {reclamo.estado === 'aceptado' && !entregaConfirmada ? (
-        <Button title="Coordinar devolución" variant="secondary" onPress={() => onOpenEncuentro(reclamo)} />
+        <View style={styles.actionsColumn}>
+          <Button
+            title="Coordinar devolución"
+            icon="navigate-outline"
+            onPress={() => onOpenEncuentro(reclamo)}
+          />
+          <Button
+            title={soyTitular ? 'Mostrar QR' : 'Escanear QR'}
+            icon={soyTitular ? 'qr-code-outline' : 'scan-outline'}
+            variant="secondary"
+            onPress={() => (soyTitular ? onMostrarQr(reclamo) : onConfirmarEntrega(reclamo))}
+          />
+        </View>
       ) : null}
-      {reclamo.estado === 'aceptado' && !entregaConfirmada && esReceptor ? (
-        <Button
-          title="Confirmar entrega con QR"
-          onPress={() => onConfirmarEntrega(reclamo)}
-          disabled={sinConexion}
-        />
-      ) : null}
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, gap: spacing.sm },
-  heading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
-  titleColumn: { flex: 1, gap: 2 },
-  title: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  meta: { color: colors.textMuted, fontSize: 13 },
-  status: { overflow: 'hidden', borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, fontSize: 12, fontWeight: '700' },
-  status_pendiente: { color: '#854D0E', backgroundColor: '#FEF3C7' },
-  status_aceptado: { color: '#166534', backgroundColor: '#DCFCE7' },
-  status_rechazado: { color: '#991B1B', backgroundColor: '#FEE2E2' },
-  status_vencido: { color: colors.textMuted, backgroundColor: colors.surface },
-  resolved: { color: colors.success, fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  card: { gap: spacing.md - 4 },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md - 4 },
+  pressed: { opacity: 0.85 },
+  thumb: { width: 72, height: 72, borderRadius: radius.md },
+  titleColumn: { flex: 1, gap: spacing.xs },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs + 2 },
+  title: { ...typography.subheading },
   person: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  personName: { flex: 1, color: colors.text, fontSize: 14 },
-  body: { color: colors.text, fontSize: 14, lineHeight: 20 },
-  label: { fontWeight: '700' },
-  evidence: { width: '100%', height: 190, borderRadius: radius.sm, backgroundColor: colors.surface },
-  deadline: { color: colors.textMuted, fontSize: 12 },
+  personName: { ...typography.bodyStrong, flex: 1 },
+  evidenceBox: {
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    padding: spacing.md - 4,
+    gap: spacing.sm,
+  },
+  body: { ...typography.body },
+  barrioRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+  evidence: { width: '100%', height: 170, borderRadius: radius.md, backgroundColor: colors.surface },
+  deadline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    backgroundColor: colors.warningSoft,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md - 4,
+    paddingVertical: spacing.sm,
+  },
+  deadlineUrgent: { backgroundColor: colors.errorSoft },
+  deadlineText: { fontSize: 14, fontWeight: '700' },
+  deadlineHint: { ...typography.caption },
   actions: { flexDirection: 'row', gap: spacing.sm },
+  flex: { flex: 1 },
+  actionsColumn: { gap: spacing.sm },
+  resolved: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.successSoft,
+    borderRadius: radius.md,
+    padding: spacing.md - 4,
+  },
+  resolvedText: { ...typography.bodyStrong, color: colors.success, flex: 1 },
 });
