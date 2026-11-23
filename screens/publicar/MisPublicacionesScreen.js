@@ -494,8 +494,10 @@ const styles = StyleSheet.create({
 
   card: { overflow: 'hidden' },
   cardFila: { flexDirection: 'row' },
-  fotoWrap: { width: 112, minHeight: 124 },
-  foto: { width: '100%', height: '100%', backgroundColor: colors.surface },
+  fotoWrap: { width: 112, minHeight: 124, overflow: 'hidden' },
+  // Absoluta (igual que fotoPublicada): con height '100%' la foto local de la cámara, que es
+  // enorme, estiraba la tarjeta de la cola sin conexión en Android.
+  foto: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.surface },
   // Absoluta: con height '100%' la foto estiraba la fila y empujaba el botón Renovar fuera
   // de la tarjeta (overflow: 'hidden' lo recortaba).
   fotoPublicada: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.surface },
