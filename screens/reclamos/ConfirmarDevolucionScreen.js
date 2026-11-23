@@ -33,8 +33,10 @@ export default function ConfirmarDevolucionScreen({ navigation, route }) {
   const { reclamos, refresh } = useReclamos();
   const [procesando, setProcesando] = useState(false);
   const [leyendoImagen, setLeyendoImagen] = useState(false);
+  const [revisandoPermiso, setRevisandoPermiso] = useState(false);
   const [error, setError] = useState('');
   const [errorCamara, setErrorCamara] = useState('');
+  const [errorPermiso, setErrorPermiso] = useState('');
   const [confirmacion, setConfirmacion] = useState(null);
   const bloqueado = useRef(false);
   const ultimoAviso = useRef(0);
@@ -68,6 +70,24 @@ export default function ConfirmarDevolucionScreen({ navigation, route }) {
     setError(mensaje);
     toast.error(mensaje);
   }, [toast]);
+
+  const solicitarPermiso = async () => {
+    setRevisandoPermiso(true);
+    setErrorPermiso('');
+    try {
+      const estado = await requestPermission();
+      if (!estado.granted) {
+        const detalle = estado.canAskAgain
+          ? 'Aceptá el permiso si aparece el diálogo de Android.'
+          : 'Android bloqueó nuevas solicitudes; revisá Cámara en los permisos de Expo Go.';
+        setErrorPermiso(`Android todavía informa el permiso como "${estado.status}". ${detalle}`);
+      }
+    } catch {
+      setErrorPermiso('No pudimos volver a solicitar el permiso. Reiniciá Expo Go o elegí una imagen del QR.');
+    } finally {
+      setRevisandoPermiso(false);
+    }
+  };
 
   const confirmarCodigo = useCallback(async (payload) => {
     if (bloqueado.current) return;
@@ -174,6 +194,14 @@ export default function ConfirmarDevolucionScreen({ navigation, route }) {
           onPedirPermiso={() => requestPermission().catch(() => {})}
           alternativaLabel="Elegir imagen del QR"
           onAlternativa={elegirImagen}
+        />
+        {errorPermiso ? <InlineMessage tone="warning" message={errorPermiso} /> : null}
+        <Button
+          title="Volver a solicitar permiso de cámara"
+          icon="refresh-outline"
+          variant="ghost"
+          onPress={solicitarPermiso}
+          loading={revisandoPermiso}
         />
         {leyendoImagen ? <InlineMessage tone="info" message="Leyendo la imagen…" /> : null}
         {error ? <InlineMessage tone="error" message={error} /> : null}
