@@ -365,7 +365,7 @@ function PublicadaCard({ item, sinConexion, renovando, onPress, onRenovar }) {
     <Card onPress={onPress} padded={false} style={styles.card} accessibilityLabel={item.titulo}>
       <View style={styles.cardFila}>
         <View style={styles.fotoWrap}>
-          <FotoPublicacion key={item.fotoPrincipalUrl} url={item.fotoPrincipalUrl} style={styles.foto} />
+          <FotoPublicacion key={item.fotoPrincipalUrl} url={item.fotoPrincipalUrl} style={styles.fotoPublicada} />
         </View>
         <View style={styles.cardInfo}>
           <View style={styles.badges}>
@@ -393,7 +393,7 @@ function PublicadaCard({ item, sinConexion, renovando, onPress, onRenovar }) {
           ) : null}
         </View>
       </View>
-      {item.puedeRenovar ? (
+      {item.estado === 'vencida' || item.puedeRenovar === true ? (
         <View style={styles.cardAcciones}>
           <Button
             title="Renovar por 30 días"
@@ -496,6 +496,9 @@ const styles = StyleSheet.create({
   cardFila: { flexDirection: 'row' },
   fotoWrap: { width: 112, minHeight: 124 },
   foto: { width: '100%', height: '100%', backgroundColor: colors.surface },
+  // Absoluta: con height '100%' la foto estiraba la fila y empujaba el botón Renovar fuera
+  // de la tarjeta (overflow: 'hidden' lo recortaba).
+  fotoPublicada: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.surface },
   fotoVacia: { alignItems: 'center', justifyContent: 'center' },
   cardInfo: { flex: 1, padding: spacing.md - 4, gap: 4 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs + 2 },
