@@ -81,8 +81,9 @@ const styles = StyleSheet.create({
   // Alto fijo para la columna de la foto: la altura de la tarjeta la define el texto (info),
   // así una foto grande no estira la tarjeta a toda la pantalla. La imagen llena la columna.
   fotoWrap: {
-    width: 116,
-    height: 132,
+    width: 128,
+    alignSelf: 'stretch',
+    minHeight: 132,
     overflow: 'hidden',
   },
   foto: {
