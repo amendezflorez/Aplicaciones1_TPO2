@@ -5,10 +5,12 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Screen from '../../components/Screen';
 import { colors, radius, spacing, typography } from '../../config/theme';
+import { serializarQrDevolucion } from '../../utils/qrDevolucion';
 
 // Punto 11: quien devuelve el objeto muestra este QR y quien lo recupera lo escanea.
-// El payload es el id de la publicación: ConfirmarDevolucionScreen lo compara tal cual
-// (codigo === publicacionId) antes de llamar a POST /publicaciones/{id}/devolucion/confirmar.
+// El payload es un JSON serializado ({ tipo, v, publicacionId }, ver utils/qrDevolucion):
+// ConfirmarDevolucionScreen lo parsea con JSON.parse y compara el publicacionId antes de
+// llamar a POST /publicaciones/{id}/devolucion/confirmar.
 // Alto contraste a propósito: negro sobre blanco, tamaño grande y zona de silencio amplia,
 // para que se lea bien aunque la pantalla tenga poco brillo (expo-brightness no está instalado).
 export default function MostrarQrScreen({ navigation, route }) {
@@ -32,7 +34,7 @@ export default function MostrarQrScreen({ navigation, route }) {
           accessibilityLabel="Código QR de la publicación para confirmar la entrega"
         >
           <QRCode
-            value={publicacionId}
+            value={serializarQrDevolucion(publicacionId)}
             size={tamano}
             color="#000000"
             backgroundColor="#FFFFFF"

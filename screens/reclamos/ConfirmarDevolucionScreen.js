@@ -16,6 +16,7 @@ import { getErrorMessage } from '../../services/errors';
 import { decodeQrFromImage } from '../../services/qrImageDecoder';
 import { confirmarDevolucion } from '../../services/reclamosService';
 import { formatFechaHora } from '../../utils/publicacionFormatters';
+import { parsearQrDevolucion } from '../../utils/qrDevolucion';
 import { rolesReclamo } from '../../utils/reclamoRoles';
 
 const TAMANO_MARCO = 250;
@@ -91,8 +92,8 @@ export default function ConfirmarDevolucionScreen({ navigation, route }) {
 
   const confirmarCodigo = useCallback(async (payload) => {
     if (bloqueado.current) return;
-    const codigo = typeof payload === 'string' ? payload.trim() : '';
-    if (!codigo || codigo !== publicacionId) {
+    const qr = parsearQrDevolucion(payload);
+    if (!qr || qr.publicacionId !== String(publicacionId)) {
       const ahora = Date.now();
       if (ahora - ultimoAviso.current > ESPERA_AVISO_MS) {
         ultimoAviso.current = ahora;

@@ -13,7 +13,7 @@ Permitir que quien recupera el objeto confirme su recepción escaneando un códi
 3. En el momento de la entrega, quien recupera escanea el QR de la publicación, desde la pantalla del dispositivo de quien devuelve o desde una copia impresa con anterioridad.
 4. El servidor valida el reclamo, la publicación y la identidad del receptor. Si corresponde, registra la devolución y cambia la publicación a `resuelta`.
 
-El QR contiene el ID estable de la publicación, no un token efímero ligado a una sesión. El cliente no es autoridad para cambiar el estado. Un QR válido no demuestra por sí solo que hubo entrega física; el flujo registra la confirmación del receptor.
+El QR contiene un JSON serializado `{"tipo":"hallado_devolucion","v":1,"publicacionId":"…"}` con el ID estable de la publicación, no un token efímero ligado a una sesión. El escáner lo lee con `JSON.parse` (ver `utils/qrDevolucion.js`). El cliente no es autoridad para cambiar el estado. Un QR válido no demuestra por sí solo que hubo entrega física; el flujo registra la confirmación del receptor.
 
 Este punto no agrega chat, notificaciones push, valoración automática ni una firma digital de ambas partes. Las confirmaciones se reflejan a ambas personas al actualizarse la bandeja.
 
@@ -74,7 +74,7 @@ El cambio de estado, el cierre de reclamos activos y el alta de `CasoResuelto` f
 
 - Cámara: `CameraView.onBarcodeScanned` entrega el contenido del QR.
 - Galería: `expo-image-picker` devuelve una imagen; se normaliza localmente y `jsqr` intenta decodificarla. Si no hay QR legible, se informa el problema y se puede seleccionar otra imagen.
-- Ambas vías envían el contenido al mismo validador del cliente. El valor debe coincidir con el `publicacionId` esperado antes de llamar al backend.
+- Ambas vías envían el contenido al mismo validador del cliente, que lo parsea con `JSON.parse` y valida `tipo` y `v`. El `publicacionId` debe coincidir con el `publicacionId` esperado antes de llamar al backend.
 - Si la lectura falla por formato, calidad o ausencia de QR, no se registra una confirmación ni se envía la imagen al servidor.
 
 ### 4.3 Resultado
