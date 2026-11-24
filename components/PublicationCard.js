@@ -18,11 +18,13 @@ export default function PublicationCard({ publicacion, onPress, distanciaKm }) {
   const categoria = CATEGORIAS.find((c) => c.id === publicacion.categoria);
   const coords = formatCoordenadas(publicacion.lat, publicacion.lng);
   const distancia = formatDistanciaKm(distanciaKm);
+  // Misma fuente que el detalle (fotos[].url); fotoPrincipalUrl queda de respaldo.
+  const urlFoto = publicacion.fotos?.[0]?.url ?? publicacion.fotoPrincipalUrl;
 
   return (
     <Card onPress={onPress} padded={false} style={styles.card} accessibilityLabel={publicacion.titulo}>
       <View style={styles.fotoWrap}>
-        <FotoPublicacion key={publicacion.fotoPrincipalUrl} url={publicacion.fotoPrincipalUrl} style={styles.foto} />
+        <FotoPublicacion key={urlFoto} url={urlFoto} style={styles.foto} />
         {publicacion.tipo ? <TipoBadge tipo={publicacion.tipo} solid style={styles.tipo} /> : null}
       </View>
 
@@ -80,14 +82,17 @@ const styles = StyleSheet.create({
   },
   // Alto fijo para la columna de la foto: la altura de la tarjeta la define el texto (info),
   // así una foto grande no estira la tarjeta a toda la pantalla. La imagen llena la columna.
+  // Medidas fijas numéricas: sin posición absoluta ni porcentajes (en Android la foto de la
+  // tarjeta no se dibujaba con esas). La tarjeta igual la define el texto.
   fotoWrap: {
     width: 128,
-    alignSelf: 'stretch',
-    minHeight: 132,
+    height: 132,
     overflow: 'hidden',
+    backgroundColor: colors.surface,
   },
   foto: {
-    ...StyleSheet.absoluteFillObject,
+    width: 128,
+    height: 132,
     backgroundColor: colors.surface,
   },
   tipo: {
