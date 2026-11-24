@@ -19,7 +19,7 @@ export default function FotoPublicacion({ url, style, iconSize = 28 }) {
     );
   }
 
-  return <Image source={{ uri }} style={style} onError={() => setFallo(true)} />;
+  return <Image source={{ uri }} style={style} resizeMode="cover" onError={() => setFallo(true)} />;
 }
 
 const styles = StyleSheet.create({
